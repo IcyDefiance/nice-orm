@@ -11,6 +11,7 @@ pub struct EntityMeta {
 pub struct FieldMeta {
 	pub name: &'static str,
 	pub ty: FieldType,
+	pub optional: bool,
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -22,7 +22,8 @@ impl PostgresSqlGen {
 			.values()
 			.map(|field| {
 				let field_type = self.entity_type_to_column_type(field.ty);
-				format!("\n\t\"{}\" {}", field.name, field_type)
+				let not_null = if field.optional { "NULL" } else { "NOT NULL" };
+				format!("\n\t\"{}\" {} {}", field.name, field_type, not_null)
 			})
 			.collect::<Vec<_>>();
 
@@ -40,7 +41,8 @@ impl PostgresSqlGen {
 
 	fn create_column(&self, table: &str, column: &FieldMeta) -> String {
 		let field_type = self.entity_type_to_column_type(column.ty);
-		format!("ALTER TABLE \"{}\" ADD COLUMN \"{}\" {};", table, column.name, field_type)
+		let not_null = if column.optional { "NULL" } else { "NOT NULL" };
+		format!("ALTER TABLE \"{}\" ADD COLUMN \"{}\" {} {};", table, column.name, field_type, not_null)
 	}
 
 	fn drop_column(&self, table: &str, column: &str) -> String {
@@ -48,11 +50,13 @@ impl PostgresSqlGen {
 	}
 
 	fn update_column(&self, table: &str, column: &FieldMeta) -> String {
+		let not_null = if column.optional { "NULL" } else { "NOT NULL" };
 		format!(
-			"ALTER TABLE \"{}\" ALTER COLUMN \"{}\" TYPE {};",
+			"ALTER TABLE \"{}\" ALTER COLUMN \"{}\" TYPE {} {};",
 			table,
 			column.name,
-			self.entity_type_to_column_type(column.ty)
+			self.entity_type_to_column_type(column.ty),
+			not_null
 		)
 	}
 

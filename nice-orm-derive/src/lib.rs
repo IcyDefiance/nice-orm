@@ -50,7 +50,7 @@ pub fn entity(input: TokenStream) -> TokenStream {
 				} else {
 					unreachable!()
 				};
-				quote! { #field_name => #nice_orm::entity_meta::FieldMeta { name: #field_name, ty: #ty } }
+				quote! { #field_name => #nice_orm::entity_meta::FieldMeta { name: #field_name, ty: #ty, optional: false } }
 			})
 			.collect::<Vec<_>>();
 		let primary_key = entity
