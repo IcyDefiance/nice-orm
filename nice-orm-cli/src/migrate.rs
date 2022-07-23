@@ -3,6 +3,7 @@ mod sql_gen;
 use self::sql_gen::{postgres::PostgresSqlGen, SqlGen};
 use anyhow::Result;
 use chrono::Utc;
+use nice_orm::entity_meta::Entities;
 use sqlx::migrate::Migrator;
 use std::{env, path::Path};
 use tokio::{
@@ -10,11 +11,11 @@ use tokio::{
 	io::AsyncWriteExt,
 };
 
-pub async fn migrate(name: &str) -> Result<()> {
+pub async fn migrate(entities: Entities, name: &str) -> Result<()> {
 	let migration_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
 	let database_url = env::var("DATABASE_URL").expect("DATABASE_URL is not set");
 	let sql_gen = match database_url.split(':').next().unwrap() {
-		"postgres" => Box::new(PostgresSqlGen::new(&database_url).await?),
+		"postgres" => Box::new(PostgresSqlGen::new(entities, &database_url).await?),
 		_ => panic!("Unsupported database"),
 	};
 

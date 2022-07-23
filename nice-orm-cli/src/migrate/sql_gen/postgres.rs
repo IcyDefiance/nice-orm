@@ -4,16 +4,16 @@ use super::SqlGen;
 use anyhow::Result;
 use async_trait::async_trait;
 use itertools::Itertools;
-use nice_orm::entity_meta::{EntityMeta, FieldMeta, FieldType};
-use schema::ENTITIES;
+use nice_orm::entity_meta::{Entities, EntityMeta, FieldMeta, FieldType};
 use sqlx::{migrate::Migrator, postgres::PgPoolOptions, query, PgPool, Pool, Postgres};
 
 pub struct PostgresSqlGen {
+	entities: Entities,
 	pool: PgPool,
 }
 impl PostgresSqlGen {
-	pub async fn new(uri: &str) -> Result<Self> {
-		Ok(Self { pool: PgPoolOptions::new().connect(&uri).await? })
+	pub async fn new(entities: Entities, uri: &str) -> Result<Self> {
+		Ok(Self { entities, pool: PgPoolOptions::new().connect(&uri).await? })
 	}
 
 	fn create_table(&self, entity: &EntityMeta) -> String {
@@ -71,21 +71,21 @@ impl SqlGen for PostgresSqlGen {
 		let mut down = Some(vec![]);
 
 		// drop tables
-		for table in old_schema.keys().filter(|k| !ENTITIES.contains_key(k)) {
+		for table in old_schema.keys().filter(|k| !self.entities.contains_key(k)) {
 			up.push(self.drop_table(table));
 			down = None;
 		}
 
 		// create tables
-		for table in ENTITIES.keys().filter(|&&k| !old_schema.contains_key(k)) {
-			let entity = ENTITIES[table];
+		for table in self.entities.keys().filter(|&&k| !old_schema.contains_key(k)) {
+			let entity = self.entities[table];
 			up.push(self.create_table(entity));
 			if let Some(down) = &mut down {
 				down.push(self.drop_table(table));
 			}
 		}
 
-		for (&table, &entity) in &*ENTITIES {
+		for (&table, &entity) in &*self.entities {
 			if let Some(old_fields) = old_schema.get(table) {
 				// drop columns
 				for column in old_fields.keys().filter(|k| !entity.fields.contains_key(k)) {

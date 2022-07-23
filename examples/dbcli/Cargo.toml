@@ -1,5 +1,5 @@
 [package]
-name = "dbcli"
+name = "migrator"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,13 +7,6 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.58"
-chrono = "0.4.19"
-clap = { version = "3.2.8", features = ["derive"] }
-dotenv = "0.15.0"
+nice-orm-cli = { path = "../../nice-orm-cli" }
 schema = { path = "../schema" }
-nice-orm = { path = "../.." }
-sqlx = { version = "0.5", features = [ "runtime-tokio-native-tls" , "postgres" ] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-async-trait = "0.1.56"
-itertools = "0.10.3"
-env_logger = "0.9.0"
