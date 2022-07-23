@@ -1,0 +1,11 @@
+{
+	"user": {
+		"next_id": 1,
+		"records": {
+			"1": {
+				"name": "John Doe",
+				"email": "1"
+			}
+		}
+	}
+}
