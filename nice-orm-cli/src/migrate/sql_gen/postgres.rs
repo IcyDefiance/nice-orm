@@ -5,7 +5,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use itertools::Itertools;
 use nice_orm::entity_meta::{Entities, EntityMeta, FieldMeta, FieldType};
-use sqlx::{migrate::Migrator, postgres::PgPoolOptions, query, PgPool, Pool, Postgres};
+use sqlx::{migrate::Migrator, postgres::PgPoolOptions, query_as, FromRow, PgPool, Pool, Postgres};
 
 pub struct PostgresSqlGen {
 	entities: Entities,
@@ -121,30 +121,35 @@ impl SqlGen for PostgresSqlGen {
 }
 
 async fn get_old_table_info(pool: &Pool<Postgres>) -> Result<HashMap<String, HashMap<String, PgField>>> {
-	let fields_query = query!(
+	#[derive(FromRow)]
+	struct FieldRow {
+		table_name: String,
+		column_name: String,
+		data_type: String,
+	}
+	let fields_query = query_as::<_, FieldRow>(
 		"SELECT table_name, column_name, data_type
 		FROM information_schema.columns
-		WHERE table_schema = 'public' AND table_name <> '_sqlx_migrations';"
+		WHERE table_schema = 'public' AND table_name <> '_sqlx_migrations';",
 	);
 	let fields = fields_query
 		.fetch_all(pool)
 		.await?
 		.into_iter()
-		.map(|x| {
-			(
-				x.table_name.unwrap(),
-				(x.column_name.clone().unwrap(), PgField { name: x.column_name.unwrap(), ty: x.data_type.unwrap() }),
-			)
-		})
+		.map(|x| (x.table_name, (x.column_name.clone(), PgField { name: x.column_name, ty: x.data_type })))
 		.into_group_map();
 	let mut fields: HashMap<String, HashMap<_, _>> =
 		fields.into_iter().map(|(table, fields)| (table, fields.into_iter().collect())).collect();
 
-	let tables_query = query!(
-		"SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = 'public' AND tablename <> '_sqlx_migrations';"
+	#[derive(FromRow)]
+	struct TableRow {
+		tablename: String,
+	}
+	let tables_query = query_as::<_, TableRow>(
+		"SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = 'public' AND tablename <> '_sqlx_migrations';",
 	);
 	for table in tables_query.fetch_all(pool).await? {
-		fields.entry(table.tablename.unwrap()).or_insert(HashMap::new());
+		fields.entry(table.tablename).or_insert(HashMap::new());
 	}
 
 	Ok(fields)
