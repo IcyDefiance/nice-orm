@@ -11,8 +11,7 @@ use tokio::{
 	io::AsyncWriteExt,
 };
 
-pub async fn migrate(entities: Entities, name: &str) -> Result<()> {
-	let migration_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+pub async fn migrate(migration_dir: impl AsRef<Path>, entities: Entities, name: &str) -> Result<()> {
 	let database_url = env::var("DATABASE_URL").expect("DATABASE_URL is not set");
 	let sql_gen = match database_url.split(':').next().unwrap() {
 		"postgres" => Box::new(PostgresSqlGen::new(entities, &database_url).await?),
@@ -29,12 +28,13 @@ pub async fn migrate(entities: Entities, name: &str) -> Result<()> {
 		let migration_name = format!("{}_{}", now, name);
 
 		let up_filename = format!("{}{}.sql", migration_name, down.as_ref().map(|_| ".up").unwrap_or(""));
-		let mut up_file = File::create(migration_dir.join(up_filename)).await?;
+		let mut up_file = File::create(migration_dir.as_ref().join(up_filename)).await?;
 		up_file.write_all(up.as_bytes()).await?;
 
 		if let Some(down) = down {
 			if down.len() > 0 {
-				let mut down_file = File::create(migration_dir.join(format!("{}.down.sql", migration_name))).await?;
+				let mut down_file =
+					File::create(migration_dir.as_ref().join(format!("{}.down.sql", migration_name))).await?;
 				down_file.write_all(down.as_bytes()).await?;
 			}
 		}

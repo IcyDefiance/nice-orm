@@ -1,5 +1,7 @@
 mod migrate;
 
+use std::path::Path;
+
 use anyhow::{Error, Result};
 use clap::{Parser, Subcommand};
 use dotenv::dotenv;
@@ -19,7 +21,7 @@ enum Commands {
 	Migrate { name: String },
 }
 
-pub async fn run(entities: Entities) -> Result<(), Error> {
+pub async fn run(migration_dir: impl AsRef<Path>, entities: Entities) -> Result<(), Error> {
 	env_logger::init();
 
 	let cli = Cli::parse();
@@ -27,7 +29,7 @@ pub async fn run(entities: Entities) -> Result<(), Error> {
 	dotenv().ok();
 
 	match &cli.command {
-		Commands::Migrate { name } => migrate(entities, name).await?,
+		Commands::Migrate { name } => migrate(migration_dir, entities, name).await?,
 	}
 
 	Ok(())
