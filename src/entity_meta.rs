@@ -16,4 +16,5 @@ pub struct FieldMeta {
 #[derive(Debug, Clone, Copy)]
 pub enum FieldType {
 	I32,
+	String,
 }

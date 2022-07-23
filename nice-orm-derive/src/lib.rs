@@ -42,8 +42,11 @@ pub fn entity(input: TokenStream) -> TokenStream {
 			.map(|field| {
 				let field_name = field.ident.as_ref().unwrap().to_string();
 				let type_i32: Type = syn::parse_str("i32").unwrap();
+				let type_string: Type = syn::parse_str("String").unwrap();
 				let ty = if field.ty == type_i32 {
 					quote! { #nice_orm::entity_meta::FieldType::I32 }
+				} else if field.ty == type_string {
+					quote! { #nice_orm::entity_meta::FieldType::String }
 				} else {
 					unreachable!()
 				};

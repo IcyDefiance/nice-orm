@@ -59,6 +59,7 @@ impl PostgresSqlGen {
 	fn entity_type_to_column_type(&self, ty: FieldType) -> &'static str {
 		match ty {
 			FieldType::I32 => "integer",
+			FieldType::String => "varchar",
 		}
 	}
 }
