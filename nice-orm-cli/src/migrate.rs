@@ -18,11 +18,12 @@ pub async fn migrate(migration_dir: impl AsRef<Path>, entities: Entities, name: 
 		_ => panic!("Unsupported database"),
 	};
 
+	fs::create_dir_all(&migration_dir).await?;
+
 	sql_gen.run_migrations(&make_migrator(&migration_dir).await?).await?;
 
 	let (up, down) = sql_gen.gen_migration().await?;
 
-	fs::create_dir_all(&migration_dir).await?;
 	if up.len() > 0 {
 		let now = Utc::now().format("%Y%m%d%H%M%S");
 		let migration_name = format!("{}_{}", now, name);
