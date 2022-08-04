@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.57"
 async-trait = "0.1.56"
+bevy_reflect = "0.8.0"
 lazy_static = "1.4.0"
 nice-orm-derive = { path = "nice-orm-derive" }
 phf = { version = "0.11.0", features = ["macros"] }

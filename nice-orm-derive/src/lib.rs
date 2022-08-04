@@ -13,7 +13,7 @@ use syn::{
 	parse_macro_input,
 	punctuated::Punctuated,
 	token::Brace,
-	Field, Ident, Result, Token, Type, Visibility,
+	Field, Ident, Result, Token, Type,
 };
 
 #[proc_macro]
@@ -60,12 +60,12 @@ pub fn entity(input: TokenStream) -> TokenStream {
 			.map(|field| field.ident.as_ref().unwrap().to_string())
 			.collect::<Vec<_>>();
 
-		let vis = entity.vis;
 		let ident = entity.ident;
 		let table_name = ident.to_string().to_case(Case::Snake);
 
 		outputs.push(quote! {
-			#vis struct #ident {
+			#[derive(#nice_orm::bevy_reflect::Reflect)]
+			pub struct #ident {
 				__orm_loaded: bool,
 				#(#fields),*
 			}
@@ -94,7 +94,13 @@ pub fn entity(input: TokenStream) -> TokenStream {
 				= #nice_orm::phf::phf_map! { #(#metas),* };
 		}
 
-		#(#outputs)*
+		mod __entities {
+			use #nice_orm::bevy_reflect::{self, Reflect};
+			use #nice_orm::phf;
+
+			#(#outputs)*
+		}
+		pub use __entities::*;
 	}
 	.into()
 }
@@ -107,7 +113,6 @@ impl Parse for Entities {
 }
 
 struct Entity {
-	vis: Visibility,
 	ident: Ident,
 	_brace_token: Brace,
 	fields: Vec<EntityField>,
@@ -116,13 +121,12 @@ impl Parse for Entity {
 	fn parse(input: ParseStream) -> Result<Self> {
 		let content;
 
-		let vis = input.parse()?;
 		let ident = input.parse()?;
 		let _brace_token = braced!(content in input);
 		let fields = content.parse_terminated::<_, Token![,]>(Field::parse_named)?;
 		let fields = fields.into_iter().map(|field| EntityField::from_field(&field).unwrap()).collect();
 
-		Ok(Entity { vis, ident, _brace_token, fields })
+		Ok(Entity { ident, _brace_token, fields })
 	}
 }
 
