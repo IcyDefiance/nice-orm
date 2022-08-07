@@ -6,3 +6,4 @@ pub use bevy_reflect;
 pub use lazy_static;
 pub use nice_orm_derive::*;
 pub use phf;
+pub use serde;

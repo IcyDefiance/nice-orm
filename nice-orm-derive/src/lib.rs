@@ -64,7 +64,8 @@ pub fn entity(input: TokenStream) -> TokenStream {
 		let table_name = ident.to_string().to_case(Case::Snake);
 
 		outputs.push(quote! {
-			#[derive(#nice_orm::bevy_reflect::Reflect)]
+			#[derive(#nice_orm::serde::Deserialize, #nice_orm::bevy_reflect::Reflect)]
+			#[serde(crate = "serde")]
 			pub struct #ident {
 				__orm_loaded: bool,
 				#(#fields),*
@@ -97,6 +98,7 @@ pub fn entity(input: TokenStream) -> TokenStream {
 		mod __entities {
 			use #nice_orm::bevy_reflect::{self, Reflect};
 			use #nice_orm::phf;
+			use #nice_orm::serde;
 
 			#(#outputs)*
 		}

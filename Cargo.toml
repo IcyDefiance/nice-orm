@@ -12,6 +12,7 @@ bevy_reflect = "0.8.0"
 lazy_static = "1.4.0"
 nice-orm-derive = { path = "nice-orm-derive" }
 phf = { version = "0.11.0", features = ["macros"] }
+serde = { version = "1.0.142", features = ["derive"] }
 serde_json = "1.0.81"
 tokio = { version = "1.19.2", features = ["fs"] }
 
