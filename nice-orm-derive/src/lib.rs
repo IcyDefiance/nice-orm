@@ -106,6 +106,10 @@ pub fn entity(input: TokenStream) -> TokenStream {
 						None
 					}
 				}
+
+				fn mark_loaded(&mut self) {
+					self.__orm_loaded = true;
+				}
 			}
 		});
 

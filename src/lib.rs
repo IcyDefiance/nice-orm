@@ -18,6 +18,7 @@ use std::{
 pub trait Entity: Struct {
 	fn id(&self) -> Option<Box<dyn Key + Send + Sync>>;
 	fn meta(&self) -> &'static EntityMeta;
+	fn mark_loaded(&mut self);
 }
 
 pub trait Key {
