@@ -101,7 +101,7 @@ pub fn entity(input: TokenStream) -> TokenStream {
 
 				fn id(&self) -> Option<Box<dyn #nice_orm::Key>> {
 					if self.__orm_loaded {
-						Some((#(self.#primary_key_idents),*).into())
+						Some(Box::new((#(self.#primary_key_idents),*)))
 					} else {
 						None
 					}
