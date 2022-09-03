@@ -99,7 +99,7 @@ pub fn entity(input: TokenStream) -> TokenStream {
 					Self::META
 				}
 
-				fn id(&self) -> Option<Box<dyn #nice_orm::Key>> {
+				fn id(&self) -> Option<Box<dyn #nice_orm::Key + Send + Sync>> {
 					if self.__orm_loaded {
 						Some(Box::new((#(self.#primary_key_idents),*)))
 					} else {
