@@ -32,6 +32,16 @@ pub fn entity(input: TokenStream) -> TokenStream {
 			let ty = &field.ty;
 			quote! { #ident: #ty }
 		});
+		let field_accessors = entity.fields.iter().map(|field| {
+			let ident = &field.ident;
+			let getter = syn::Ident::new(&format!("get_{}", ident.as_ref().unwrap()), Span::call_site());
+			let setter = syn::Ident::new(&format!("set_{}", ident.as_ref().unwrap()), Span::call_site());
+			let ty = &field.ty;
+			quote! {
+				pub fn #getter(&self) -> &#ty { &self.#ident }
+				pub fn #setter(&mut self, value: #ty) -> &mut Self { self.#ident = value; self }
+			}
+		});
 		let field_inits = entity.fields.iter().map(|field| {
 			let ident = &field.ident;
 			quote! { #ident: Default::default() }
@@ -53,12 +63,10 @@ pub fn entity(input: TokenStream) -> TokenStream {
 				quote! { #field_name => #nice_orm::entity_meta::FieldMeta { name: #field_name, ty: #ty, optional: false } }
 			})
 			.collect::<Vec<_>>();
-		let primary_key = entity
-			.fields
-			.iter()
-			.filter(|field| field.primary_key)
-			.map(|field| field.ident.as_ref().unwrap().to_string())
-			.collect::<Vec<_>>();
+		let primary_key_idents =
+			entity.fields.iter().filter(|field| field.primary_key).map(|field| field.ident.clone()).collect::<Vec<_>>();
+		let primary_key =
+			primary_key_idents.iter().map(|ident| ident.as_ref().unwrap().to_string()).collect::<Vec<_>>();
 
 		let ident = entity.ident;
 		let table_name = ident.to_string().to_case(Case::Snake);
@@ -71,7 +79,7 @@ pub fn entity(input: TokenStream) -> TokenStream {
 				#(#fields),*
 			}
 			impl #ident {
-				pub const META: &'static #nice_orm::entity_meta::EntityMeta = &#nice_orm::entity_meta::EntityMeta {
+				const META: &'static #nice_orm::entity_meta::EntityMeta = &#nice_orm::entity_meta::EntityMeta {
 					table_name: #table_name,
 					fields: #nice_orm::phf::phf_map! { #(#field_metas),* },
 					primary_key: &[#(#primary_key),*],
@@ -81,6 +89,21 @@ pub fn entity(input: TokenStream) -> TokenStream {
 					Self {
 						__orm_loaded: false,
 						#(#field_inits),*
+					}
+				}
+
+				#(#field_accessors)*
+			}
+			impl #nice_orm::Entity for #ident {
+				fn meta(&self) -> &'static #nice_orm::entity_meta::EntityMeta {
+					Self::META
+				}
+
+				fn id(&self) -> Option<Box<dyn Key>> {
+					if self.__orm_loaded {
+						Some((#(self.#primary_key_idents),*).into())
+					} else {
+						None
 					}
 				}
 			}
