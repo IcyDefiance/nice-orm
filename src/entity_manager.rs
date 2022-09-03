@@ -1,11 +1,7 @@
-use crate::{Entity, Key};
+use crate::{entity_meta::FieldType, Entity, Key};
 use anyhow::Result;
-use sqlx::{pool::PoolConnection, postgres::PgPoolOptions, PgPool, Postgres};
-use std::{
-	any::{Any, TypeId},
-	collections::HashMap,
-	sync::Arc,
-};
+use sqlx::{pool::PoolConnection, postgres::PgPoolOptions, query, PgPool, Postgres, Row};
+use std::{any::TypeId, collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
 
 pub struct DbContextPool {
@@ -40,12 +36,54 @@ impl DbContext {
 		entity
 	}
 
-	pub fn save_changes(&mut self) {
+	pub async fn save_changes(&mut self) -> Result<()> {
 		for entity in self.pending_entities.drain(..) {
-			let type_id = entity.type_id();
-			let id = entity.id();
-			let fields = entity.meta().fields;
+			let (id, type_id) = {
+				let mut entity = entity.write().await;
+				let entity = &mut *entity;
+				let fields = &entity.meta().fields;
+				let sql = format!(
+					"INSERT INTO \"{}\" ({}) VALUES ({}) RETURNING {}",
+					entity.meta().table_name,
+					fields.keys().map(|field| format!("\"{}\"", field)).collect::<Vec<_>>().join(", "),
+					fields.keys().enumerate().map(|(i, _)| format!("${}", i + 1)).collect::<Vec<_>>().join(", "),
+					entity
+						.meta()
+						.primary_key
+						.iter()
+						.map(|field| format!("\"{}\"", field))
+						.collect::<Vec<_>>()
+						.join(", "),
+				);
+				let mut query = query(&sql);
+				for field in fields.values() {
+					match field.ty {
+						FieldType::I32 => {
+							query = query.bind(entity.field(field.name).unwrap().downcast_ref::<i32>().unwrap())
+						},
+						FieldType::String => {
+							query = query.bind(entity.field(field.name).unwrap().downcast_ref::<String>().unwrap())
+						},
+					}
+				}
+				let result = query.fetch_one(&mut self.connection).await?;
+				for field in entity.meta().primary_key.iter() {
+					let field_meta = &entity.meta().fields[field];
+					match field_meta.ty {
+						FieldType::I32 => {
+							*entity.field_mut(field_meta.name).unwrap().downcast_mut::<i32>().unwrap() =
+								result.get(field)
+						},
+						FieldType::String => {
+							*entity.field_mut(field_meta.name).unwrap().downcast_mut::<String>().unwrap() =
+								result.get(field)
+						},
+					}
+				}
+				(entity.id(), (*entity).type_id())
+			};
 			self.entities.entry(type_id).or_insert_with(HashMap::new).insert(id.unwrap(), entity);
 		}
+		Ok(())
 	}
 }

@@ -1,27 +1,29 @@
 pub mod entity_manager;
 pub mod entity_meta;
 
-use std::{
-	any::TypeId,
-	collections::hash_map::DefaultHasher,
-	hash::{Hash, Hasher},
-};
-
 pub use bevy_reflect;
-use entity_meta::EntityMeta;
 pub use lazy_static;
 pub use nice_orm_derive::*;
 pub use phf;
 pub use serde;
 
-pub trait Entity {
+use bevy_reflect::Struct;
+use entity_meta::EntityMeta;
+use std::{
+	any::{Any, TypeId},
+	collections::hash_map::DefaultHasher,
+	hash::{Hash, Hasher},
+};
+
+pub trait Entity: Struct {
 	fn id(&self) -> Option<Box<dyn Key>>;
 	fn meta(&self) -> &'static EntityMeta;
 }
 
-trait Key {
+pub trait Key {
 	fn eq(&self, other: &dyn Key) -> bool;
 	fn hash(&self) -> u64;
+	fn as_any(&self) -> &dyn Any;
 }
 impl<T: Eq + Hash + 'static> Key for T {
 	fn eq(&self, other: &dyn Key) -> bool {
@@ -37,6 +39,10 @@ impl<T: Eq + Hash + 'static> Key for T {
 		// provide distinct hashes
 		Hash::hash(&(TypeId::of::<T>(), self), &mut h);
 		h.finish()
+	}
+
+	fn as_any(&self) -> &dyn Any {
+		self
 	}
 }
 impl PartialEq for Box<dyn Key> {
