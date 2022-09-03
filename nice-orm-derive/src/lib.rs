@@ -79,7 +79,7 @@ pub fn entity(input: TokenStream) -> TokenStream {
 				#(#fields),*
 			}
 			impl #ident {
-				const META: &'static #nice_orm::entity_meta::EntityMeta = &#nice_orm::entity_meta::EntityMeta {
+				pub const META: &'static #nice_orm::entity_meta::EntityMeta = &#nice_orm::entity_meta::EntityMeta {
 					table_name: #table_name,
 					fields: #nice_orm::phf::phf_map! { #(#field_metas),* },
 					primary_key: &[#(#primary_key),*],
