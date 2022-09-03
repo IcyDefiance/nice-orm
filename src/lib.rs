@@ -16,7 +16,7 @@ use std::{
 };
 
 pub trait Entity: Struct {
-	fn id(&self) -> Option<Box<dyn Key>>;
+	fn id(&self) -> Option<Box<dyn Key + Send + Sync>>;
 	fn meta(&self) -> &'static EntityMeta;
 }
 
@@ -45,13 +45,13 @@ impl<T: Eq + Hash + 'static> Key for T {
 		self
 	}
 }
-impl PartialEq for Box<dyn Key> {
+impl PartialEq for Box<dyn Key + Send + Sync> {
 	fn eq(&self, other: &Self) -> bool {
 		Key::eq(self.as_ref(), other.as_ref())
 	}
 }
-impl Eq for Box<dyn Key> {}
-impl Hash for Box<dyn Key> {
+impl Eq for Box<dyn Key + Send + Sync> {}
+impl Hash for Box<dyn Key + Send + Sync> {
 	fn hash<H: Hasher>(&self, state: &mut H) {
 		let key_hash = Key::hash(self.as_ref());
 		state.write_u64(key_hash);

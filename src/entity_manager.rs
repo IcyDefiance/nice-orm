@@ -22,7 +22,7 @@ impl DbContextPool {
 /// Intended to be short-lived, such as for a single request.
 pub struct DbContext {
 	connection: PoolConnection<Postgres>,
-	entities: HashMap<TypeId, HashMap<Box<dyn Key>, Arc<RwLock<dyn Entity>>>>,
+	entities: HashMap<TypeId, HashMap<Box<dyn Key + Send + Sync>, Arc<RwLock<dyn Entity>>>>,
 	pending_entities: Vec<Arc<RwLock<dyn Entity>>>,
 }
 impl DbContext {
@@ -80,9 +80,9 @@ impl DbContext {
 						},
 					}
 				}
-				(entity.id(), (*entity).type_id())
+				(entity.id().unwrap(), (*entity).type_id())
 			};
-			self.entities.entry(type_id).or_insert_with(HashMap::new).insert(id.unwrap(), entity);
+			self.entities.entry(type_id).or_insert_with(HashMap::new).insert(id, entity);
 		}
 		Ok(())
 	}
