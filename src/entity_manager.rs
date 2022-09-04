@@ -37,6 +37,7 @@ impl DbContext {
 	}
 
 	pub async fn save_changes(&mut self) -> Result<()> {
+		println!("saving {} entities", self.pending_entities.len());
 		for entity in self.pending_entities.drain(..) {
 			let (id, type_id) = {
 				let mut entity = entity.write().await;
