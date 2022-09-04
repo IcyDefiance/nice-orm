@@ -57,27 +57,20 @@ impl DbContext {
 				);
 				let mut query = query(&sql);
 				for field in fields.values() {
-					match field.ty {
-						FieldType::I32 => {
-							query = query.bind(entity.field(field.name).unwrap().downcast_ref::<i32>().unwrap())
-						},
-						FieldType::String => {
-							query = query.bind(entity.field(field.name).unwrap().downcast_ref::<String>().unwrap())
-						},
-					}
+					let value = entity.field(field.name).unwrap();
+					query = match field.ty {
+						FieldType::I32 => query.bind(value.downcast_ref::<i32>().unwrap()),
+						FieldType::String => query.bind(value.downcast_ref::<String>().unwrap()),
+					};
 				}
 				let result = query.fetch_one(&mut self.connection).await?;
+				println!("inserted");
 				for field in entity.meta().primary_key.iter() {
 					let field_meta = &entity.meta().fields[field];
+					let value = entity.field_mut(field_meta.name).unwrap();
 					match field_meta.ty {
-						FieldType::I32 => {
-							*entity.field_mut(field_meta.name).unwrap().downcast_mut::<i32>().unwrap() =
-								result.get(field)
-						},
-						FieldType::String => {
-							*entity.field_mut(field_meta.name).unwrap().downcast_mut::<String>().unwrap() =
-								result.get(field)
-						},
+						FieldType::I32 => *value.downcast_mut::<i32>().unwrap() = result.get(field),
+						FieldType::String => *value.downcast_mut::<String>().unwrap() = result.get(field),
 					}
 				}
 				(entity.id().unwrap(), (*entity).type_id())
