@@ -16,14 +16,14 @@ use std::{
 };
 
 pub trait Entity: Struct {
+	fn id(&self) -> Box<dyn Key + Send + Sync>;
+	fn meta(&self) -> &'static EntityMeta;
+}
+
+pub trait EntityExt: Entity {
 	const META: &'static EntityMeta;
 
 	fn new() -> Self;
-	fn id(&self) -> Box<dyn Key + Send + Sync>;
-
-	fn meta(&self) -> &'static EntityMeta {
-		Self::META
-	}
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Reflect)]

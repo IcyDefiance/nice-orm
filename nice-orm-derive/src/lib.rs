@@ -86,6 +86,15 @@ pub fn entity(input: TokenStream) -> TokenStream {
 		let ident = entity.ident;
 		let table_name = ident.to_string().to_case(Case::Snake);
 
+		let meta = quote! {
+			&#nice_orm::entity_meta::EntityMeta {
+				table_name: #table_name,
+				fields: #nice_orm::phf::phf_map! { #(#field_metas),* },
+				primary_key: &[#(#primary_key),*],
+			}
+		};
+		let meta_clone = meta.clone();
+
 		outputs.push(quote! {
 			#[derive(#nice_orm::bevy_reflect::Reflect)]
 			pub struct #ident {
@@ -95,18 +104,19 @@ pub fn entity(input: TokenStream) -> TokenStream {
 				#(#field_accessors)*
 			}
 			impl #nice_orm::Entity for #ident {
-				const META: &'static #nice_orm::entity_meta::EntityMeta = &#nice_orm::entity_meta::EntityMeta {
-					table_name: #table_name,
-					fields: #nice_orm::phf::phf_map! { #(#field_metas),* },
-					primary_key: &[#(#primary_key),*],
-				};
-
-				fn new() -> Self {
-					Self { #(#field_inits),* }
+				fn meta(&self) -> &'static #nice_orm::entity_meta::EntityMeta {
+					#meta
 				}
 
 				fn id(&self) -> Box<dyn #nice_orm::Key + Send + Sync> {
 					Box::new((#(self.#primary_key_idents.get().clone()),*))
+				}
+			}
+			impl #nice_orm::EntityExt for #ident {
+				const META: &'static #nice_orm::entity_meta::EntityMeta = #meta_clone;
+
+				fn new() -> Self {
+					Self { #(#field_inits),* }
 				}
 			}
 		});

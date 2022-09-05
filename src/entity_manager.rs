@@ -1,4 +1,4 @@
-use crate::{entity_meta::FieldType, Entity, EntityField, Key};
+use crate::{entity_meta::FieldType, Entity, EntityExt, EntityField, Key};
 use anyhow::Result;
 use sqlx::{pool::PoolConnection, postgres::PgPoolOptions, query, PgPool, Postgres, Row};
 use std::{any::TypeId, collections::HashMap, marker::PhantomData, sync::Arc};
@@ -36,7 +36,7 @@ impl DbContext {
 		entity
 	}
 
-	pub fn select<T: Entity>(&self) -> SelectQueryBuilder<T> {
+	pub fn select<T: EntityExt>(&mut self) -> SelectQueryBuilder<T> {
 		SelectQueryBuilder::new(self)
 	}
 
@@ -106,17 +106,17 @@ impl DbContext {
 	}
 }
 
-struct SelectQueryBuilder<T> {
-	db_context: *const DbContext,
+pub struct SelectQueryBuilder<'a, T> {
+	db_context: &'a mut DbContext,
 	phantom: PhantomData<T>,
 }
-impl<T: Entity> SelectQueryBuilder<T> {
-	pub fn new(db_context: &DbContext) -> Self {
+impl<'a, T: EntityExt> SelectQueryBuilder<'a, T> {
+	pub fn new(db_context: &'a mut DbContext) -> Self {
 		Self { db_context, phantom: PhantomData }
 	}
 
-	pub fn count(&self) -> Result<i32> {
+	pub async fn count(self) -> Result<i32> {
 		let sql = format!("SELECT COUNT(*) FROM \"{}\";", T::META.table_name);
-		Ok(query(&sql).fetch_one(&selfdb_context).await?.get(0))
+		Ok(query(&sql).fetch_one(&mut self.db_context.connection).await?.get(0))
 	}
 }
