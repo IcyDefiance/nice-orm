@@ -37,10 +37,8 @@ impl DbContext {
 	}
 
 	pub async fn save_changes(&mut self) -> Result<()> {
-		println!("saving {} entities", self.pending_entities.len());
 		for entity in self.pending_entities.drain(..) {
 			let (id, type_id) = {
-				println!("locking entity");
 				let mut entity = entity.write().await;
 				let entity = &mut *entity;
 				let fields = &entity.meta().fields;
@@ -65,9 +63,7 @@ impl DbContext {
 						FieldType::String => query.bind(value.downcast_ref::<String>().unwrap()),
 					};
 				}
-				println!("executing query");
 				let result = query.fetch_one(&mut self.connection).await?;
-				println!("inserted");
 				for field in entity.meta().primary_key.iter() {
 					let field_meta = &entity.meta().fields[field];
 					let value = entity.field_mut(field_meta.name).unwrap();
