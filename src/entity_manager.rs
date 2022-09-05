@@ -72,8 +72,8 @@ impl DbContext {
 				for field in fields.values() {
 					let value = entity.field(field.name).unwrap();
 					query = match field.ty {
-						FieldType::I32 => query.bind(value.downcast_ref::<i32>().unwrap()),
-						FieldType::String => query.bind(value.downcast_ref::<String>().unwrap()),
+						FieldType::I32 => query.bind(value.downcast_ref::<EntityField<i32>>().unwrap().get()),
+						FieldType::String => query.bind(value.downcast_ref::<EntityField<String>>().unwrap().get()),
 					};
 				}
 				let result = query.fetch_one(&mut self.connection).await?;
