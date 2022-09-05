@@ -164,7 +164,7 @@ async fn get_old_table_info(pool: &Pool<Postgres>) -> Result<HashMap<String, Has
 		identity_generation: Option<String>,
 	}
 	let fields_query = query_as::<_, FieldRow>(
-		"SELECT old_column.generated_as_identity != column_meta.generated_as_identity, column_name, data_type, \
+		"SELECT table_name, column_name, data_type, identity_generation
 		 identity_generation
 		FROM information_schema.columns
 		WHERE table_schema = 'public' AND table_name <> '_sqlx_migrations';",
