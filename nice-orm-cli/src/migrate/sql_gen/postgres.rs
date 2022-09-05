@@ -4,7 +4,7 @@ use super::SqlGen;
 use anyhow::Result;
 use async_trait::async_trait;
 use itertools::Itertools;
-use nice_orm::entity_meta::{Entities, EntityMeta, FieldMeta, FieldType};
+use nice_orm::entity_meta::{Entities, EntityMeta, FieldMeta, FieldType, GeneratedWhen};
 use sqlx::{migrate::Migrator, postgres::PgPoolOptions, query_as, FromRow, PgPool, Pool, Postgres};
 
 pub struct PostgresSqlGen {
@@ -39,23 +39,20 @@ impl PostgresSqlGen {
 		format!("DROP TABLE \"{}\";", table)
 	}
 
-	fn create_column(&self, table: &str, column: &FieldMeta) -> String {
-		let field_type = Self::entity_type_to_column_type(column.ty);
+	fn create_column(&self, table: &str, field: &FieldMeta) -> String {
+		let field_type = Self::entity_type_to_column_type(field.ty);
 		let column_constraints = Self::make_column_constriants(field);
-		format!("ALTER TABLE \"{}\" ADD COLUMN \"{}\" {} {};", table, column.name, field_type, column_constraints)
+		format!("ALTER TABLE \"{}\" ADD COLUMN \"{}\" {} {};", table, field.name, field_type, column_constraints)
 	}
 
-	fn drop_column(&self, table: &str, column: &str) -> String {
-		format!("ALTER TABLE \"{}\" DROP COLUMN \"{}\";", table, column)
+	fn drop_column(&self, table: &str, field: &str) -> String {
+		format!("ALTER TABLE \"{}\" DROP COLUMN \"{}\";", table, field)
 	}
 
-	fn update_column(&self, table: &str, column: &FieldMeta) -> String {
-		let field_type = Self::entity_type_to_column_type(column.ty);
+	fn update_column(&self, table: &str, field: &FieldMeta) -> String {
+		let field_type = Self::entity_type_to_column_type(field.ty);
 		let column_constraints = Self::make_column_constriants(field);
-		format!(
-			"ALTER TABLE \"{}\" ALTER COLUMN \"{}\" TYPE {} {};",
-			table, column.name, field_type, column_constraints
-		)
+		format!("ALTER TABLE \"{}\" ALTER COLUMN \"{}\" TYPE {} {};", table, field.name, field_type, column_constraints)
 	}
 
 	fn entity_type_to_column_type(ty: FieldType) -> &'static str {
@@ -67,7 +64,7 @@ impl PostgresSqlGen {
 
 	fn make_column_constriants(field: &FieldMeta) -> String {
 		let mut column_constraints = vec![];
-		if let Some(generated_as_identity) = field.generated_as_identity {
+		if let Some(generated_as_identity) = &field.generated_as_identity {
 			let generated_as_identity = match generated_as_identity {
 				GeneratedWhen::Always => "ALWAYS",
 				GeneratedWhen::ByDefault => "BY DEFAULT",
