@@ -62,9 +62,9 @@ pub fn entity(input: TokenStream) -> TokenStream {
 				};
 				let generated_as_identity = if let Some(generated_as_identity) = &field.generated_as_identity {
 					if generated_as_identity == "always" {
-						quote! { Some(#nice_orm::entity_meta::GeneratedWhen::Always) }
+						quote! { Some(#nice_orm::entity_meta::IdentityGeneration::Always) }
 					} else if generated_as_identity == "by_default" {
-						quote! { Some(#nice_orm::entity_meta::GeneratedWhen::ByDefault) }
+						quote! { Some(#nice_orm::entity_meta::IdentityGeneration::ByDefault) }
 					} else {
 						unreachable!()
 					}
