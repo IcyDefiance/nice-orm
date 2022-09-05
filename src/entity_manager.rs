@@ -115,7 +115,7 @@ impl<'a, T: EntityExt> SelectQueryBuilder<'a, T> {
 		Self { db_context, phantom: PhantomData }
 	}
 
-	pub async fn count(self) -> Result<i32> {
+	pub async fn count(self) -> Result<i64> {
 		let sql = format!("SELECT COUNT(*) FROM \"{}\";", T::META.table_name);
 		Ok(query(&sql).fetch_one(&mut self.db_context.connection).await?.get(0))
 	}
