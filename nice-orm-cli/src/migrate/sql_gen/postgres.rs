@@ -4,7 +4,7 @@ use super::SqlGen;
 use anyhow::Result;
 use async_trait::async_trait;
 use itertools::Itertools;
-use nice_orm::entity_meta::{Entities, EntityMeta, FieldMeta, FieldType, GeneratedWhen};
+use nice_orm::entity_meta::{Entities, EntityMeta, FieldMeta, FieldType, IdentityGeneration};
 use sqlx::{migrate::Migrator, postgres::PgPoolOptions, query_as, FromRow, PgPool, Pool, Postgres};
 
 pub struct PostgresSqlGen {
@@ -22,7 +22,7 @@ impl PostgresSqlGen {
 			.values()
 			.map(|field| {
 				let field_type = Self::entity_type_to_column_type(field.ty);
-				let column_constraints = Self::make_column_constriants(field);
+				let column_constraints = Self::make_column_constraints(field);
 				format!("\n\t\"{}\" {} {}", field.name, field_type, column_constraints)
 			})
 			.collect::<Vec<_>>();
@@ -41,7 +41,7 @@ impl PostgresSqlGen {
 
 	fn create_column(&self, table: &str, field: &FieldMeta) -> String {
 		let field_type = Self::entity_type_to_column_type(field.ty);
-		let column_constraints = Self::make_column_constriants(field);
+		let column_constraints = Self::make_column_constraints(field);
 		format!("ALTER TABLE \"{}\" ADD COLUMN \"{}\" {} {};", table, field.name, field_type, column_constraints)
 	}
 
@@ -51,8 +51,15 @@ impl PostgresSqlGen {
 
 	fn update_column(&self, table: &str, field: &FieldMeta) -> String {
 		let field_type = Self::entity_type_to_column_type(field.ty);
-		let column_constraints = Self::make_column_constriants(field);
-		format!("ALTER TABLE \"{}\" ALTER COLUMN \"{}\" TYPE {} {};", table, field.name, field_type, column_constraints)
+		format!("ALTER TABLE \"{}\" ALTER COLUMN \"{}\" TYPE {} {};", table, field.name, field_type)
+	}
+
+	fn add_identity_generation(&self, table: &str, field: &FieldMeta) -> String {
+		let identity_generation = Self::identity_generation(field.generated_as_identity.unwrap());
+		format!(
+			"ALTER TABLE \"{}\" ALTER COLUMN \"{}\" ADD GENERATED {} AS IDENTITY;",
+			table, field.name, identity_generation
+		)
 	}
 
 	fn entity_type_to_column_type(ty: FieldType) -> &'static str {
@@ -62,16 +69,25 @@ impl PostgresSqlGen {
 		}
 	}
 
-	fn make_column_constriants(field: &FieldMeta) -> String {
+	fn make_column_constraints(field: &FieldMeta) -> String {
 		let mut column_constraints = vec![];
+		if field.optional {
+			column_constraints.push("NULL".into());
+		} else {
+			column_constraints.push("NOT NULL".into());
+		}
 		if let Some(generated_as_identity) = &field.generated_as_identity {
-			let generated_as_identity = match generated_as_identity {
-				GeneratedWhen::Always => "ALWAYS",
-				GeneratedWhen::ByDefault => "BY DEFAULT",
-			};
-			column_constraints.push(format!("GENERATED {} AS IDENTITY", generated_as_identity));
+			let identity_generation = Self::identity_generation(generated_as_identity);
+			column_constraints.push(format!("GENERATED {} AS IDENTITY", identity_generation));
 		}
 		column_constraints.join(" ")
+	}
+
+	fn identity_generation(identity_generation: IdentityGeneration) -> &'static str {
+		match identity_generation {
+			IdentityGeneration::Always => "ALWAYS",
+			IdentityGeneration::ByDefault => "BY DEFAULT",
+		}
 	}
 }
 #[async_trait]
@@ -108,11 +124,14 @@ impl SqlGen for PostgresSqlGen {
 					let column_meta = &entity.fields[column];
 					if let Some(old_column) = old_fields.get(column) {
 						// update columns
-						if old_column.ty != Self::entity_type_to_column_type(column_meta.ty)
-							|| old_column.generated_as_identity != column_meta.generated_as_identity
-						{
+						if old_column.ty != Self::entity_type_to_column_type(column_meta.ty) {
 							up.push(self.update_column(table, &column_meta));
 							// TODO: detect when we can reverse this update, such as when shrinking an integer type
+						}
+						if let Some(identity_generation) = column_meta.generated_as_identity {
+							if old_column.generated_as_identity != Self::identity_generation(identity_generation) {
+								up.push(self.add_identity_generation(table, &column_meta));
+							}
 						}
 					} else {
 						// create columns
@@ -140,9 +159,11 @@ async fn get_old_table_info(pool: &Pool<Postgres>) -> Result<HashMap<String, Has
 		table_name: String,
 		column_name: String,
 		data_type: String,
+		identity_generation: Option<String>,
 	}
 	let fields_query = query_as::<_, FieldRow>(
-		"SELECT table_name, column_name, data_type
+		"SELECT old_column.generated_as_identity != column_meta.generated_as_identity, column_name, data_type, \
+		 identity_generation
 		FROM information_schema.columns
 		WHERE table_schema = 'public' AND table_name <> '_sqlx_migrations';",
 	);
@@ -150,7 +171,16 @@ async fn get_old_table_info(pool: &Pool<Postgres>) -> Result<HashMap<String, Has
 		.fetch_all(pool)
 		.await?
 		.into_iter()
-		.map(|x| (x.table_name, (x.column_name.clone(), PgField { name: x.column_name, ty: x.data_type })))
+		.map(|x| {
+			(
+				x.table_name,
+				(x.column_name.clone(), PgField {
+					name: x.column_name,
+					ty: x.data_type,
+					identity_generation: x.identity_generation,
+				}),
+			)
+		})
 		.into_group_map();
 	let mut fields: HashMap<String, HashMap<_, _>> =
 		fields.into_iter().map(|(table, fields)| (table, fields.into_iter().collect())).collect();
@@ -173,4 +203,5 @@ struct PgField {
 	#[allow(unused)]
 	name: String,
 	ty: String,
+	identity_generation: Option<String>,
 }
