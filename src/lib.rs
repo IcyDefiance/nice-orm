@@ -7,7 +7,7 @@ pub use nice_orm_derive::*;
 pub use phf;
 pub use serde;
 
-use bevy_reflect::Struct;
+use bevy_reflect::{Reflect, Struct};
 use entity_meta::EntityMeta;
 use std::{
 	any::{Any, TypeId},
@@ -16,9 +16,32 @@ use std::{
 };
 
 pub trait Entity: Struct {
-	fn id(&self) -> Option<Box<dyn Key + Send + Sync>>;
+	fn id(&self) -> Box<dyn Key + Send + Sync>;
 	fn meta(&self) -> &'static EntityMeta;
-	fn mark_loaded(&mut self);
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Reflect)]
+pub enum EntityField<T: Clone + Send + Sync + 'static> {
+	Set(T),
+	Modified(T),
+	Unset,
+}
+impl<T: Clone + Send + Sync + 'static> EntityField<T> {
+	pub fn get(&self) -> &T {
+		match self {
+			EntityField::Set(v) => v,
+			EntityField::Modified(v) => v,
+			EntityField::Unset => panic!("Entity field is unset"),
+		}
+	}
+
+	pub fn is_modified(&self) -> bool {
+		match self {
+			EntityField::Set(_) => false,
+			EntityField::Modified(_) => true,
+			EntityField::Unset => false,
+		}
+	}
 }
 
 pub trait Key {

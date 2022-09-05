@@ -30,21 +30,25 @@ pub fn entity(input: TokenStream) -> TokenStream {
 		let fields = entity.fields.iter().map(|field| {
 			let ident = &field.ident;
 			let ty = &field.ty;
-			quote! { #ident: #ty }
+			quote! { #ident: #nice_orm::EntityField<#ty> }
 		});
 		let field_accessors = entity.fields.iter().map(|field| {
-			let ident = &field.ident;
-			let getter = syn::Ident::new(&format!("get_{}", ident.as_ref().unwrap()), Span::call_site());
-			let setter = syn::Ident::new(&format!("set_{}", ident.as_ref().unwrap()), Span::call_site());
+			let ident = field.ident.as_ref().unwrap();
 			let ty = &field.ty;
-			quote! {
-				pub fn #getter(&self) -> &#ty { &self.#ident }
-				pub fn #setter(&mut self, value: #ty) -> &mut Self { self.#ident = value; self }
+			let getter_name = syn::Ident::new(&format!("{}", ident), Span::call_site());
+			let setter_name = syn::Ident::new(&format!("set_{}", ident), Span::call_site());
+			let getter = quote! { pub fn #getter_name(&self) -> &#ty { &self.#ident.get() } };
+			let setter =
+				quote! { pub fn #setter_name(&mut self, value: #ty) -> &mut Self { self.#ident = #nice_orm::EntityField::Modified(value); self } };
+			if field.identity_generation.as_ref().map(|x| &**x) == Some("always") {
+				quote! { #getter }
+			} else {
+				quote! { #getter #setter }
 			}
 		});
 		let field_inits = entity.fields.iter().map(|field| {
 			let ident = &field.ident;
-			quote! { #ident: Default::default() }
+			quote! { #ident: #nice_orm::EntityField::Unset }
 		});
 		let field_metas = entity
 			.fields
@@ -83,10 +87,8 @@ pub fn entity(input: TokenStream) -> TokenStream {
 		let table_name = ident.to_string().to_case(Case::Snake);
 
 		outputs.push(quote! {
-			#[derive(#nice_orm::serde::Deserialize, #nice_orm::bevy_reflect::Reflect)]
-			#[serde(crate = "serde")]
+			#[derive(#nice_orm::bevy_reflect::Reflect)]
 			pub struct #ident {
-				__orm_loaded: bool,
 				#(#fields),*
 			}
 			impl #ident {
@@ -98,7 +100,6 @@ pub fn entity(input: TokenStream) -> TokenStream {
 
 				pub fn new() -> Self {
 					Self {
-						__orm_loaded: false,
 						#(#field_inits),*
 					}
 				}
@@ -110,16 +111,8 @@ pub fn entity(input: TokenStream) -> TokenStream {
 					Self::META
 				}
 
-				fn id(&self) -> Option<Box<dyn #nice_orm::Key + Send + Sync>> {
-					if self.__orm_loaded {
-						Some(Box::new((#(self.#primary_key_idents),*)))
-					} else {
-						None
-					}
-				}
-
-				fn mark_loaded(&mut self) {
-					self.__orm_loaded = true;
+				fn id(&self) -> Box<dyn #nice_orm::Key + Send + Sync> {
+					Box::new((#(self.#primary_key_idents.get().clone()),*))
 				}
 			}
 		});
@@ -136,7 +129,6 @@ pub fn entity(input: TokenStream) -> TokenStream {
 		mod __entities {
 			use #nice_orm::bevy_reflect::{self, Reflect};
 			use #nice_orm::phf;
-			use #nice_orm::serde;
 
 			#(#outputs)*
 		}

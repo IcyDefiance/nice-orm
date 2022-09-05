@@ -1,4 +1,4 @@
-use crate::{entity_meta::FieldType, Entity, Key};
+use crate::{entity_meta::FieldType, Entity, EntityField, Key};
 use anyhow::Result;
 use sqlx::{pool::PoolConnection, postgres::PgPoolOptions, query, PgPool, Postgres, Row};
 use std::{any::TypeId, collections::HashMap, sync::Arc};
@@ -41,20 +41,33 @@ impl DbContext {
 			let (id, type_id) = {
 				let mut entity = entity.write().await;
 				let entity = &mut *entity;
+
 				let fields = &entity.meta().fields;
+
+				let mut field_names = Vec::with_capacity(fields.len());
+				let mut modified_field_names = Vec::with_capacity(fields.len());
+				let mut modified_field_params = Vec::with_capacity(fields.len());
+				for field in fields.values() {
+					let value = entity.field(field.name).unwrap();
+					let is_modified = match field.ty {
+						FieldType::I32 => value.downcast_ref::<EntityField<i32>>().unwrap().is_modified(),
+						FieldType::String => value.downcast_ref::<EntityField<String>>().unwrap().is_modified(),
+					};
+					field_names.push(format!("\"{}\"", field.name));
+					if is_modified {
+						modified_field_names.push(format!("\"{}\"", field.name));
+						modified_field_params.push(format!("${}", modified_field_params.len() + 1));
+					}
+				}
+
 				let sql = format!(
 					"INSERT INTO \"{}\" ({}) VALUES ({}) RETURNING {}",
 					entity.meta().table_name,
-					fields.keys().map(|field| format!("\"{}\"", field)).collect::<Vec<_>>().join(", "),
-					fields.keys().enumerate().map(|(i, _)| format!("${}", i + 1)).collect::<Vec<_>>().join(", "),
-					entity
-						.meta()
-						.primary_key
-						.iter()
-						.map(|field| format!("\"{}\"", field))
-						.collect::<Vec<_>>()
-						.join(", "),
+					modified_field_names.join(", "),
+					modified_field_params.join(", "),
+					field_names.join(", "),
 				);
+
 				let mut query = query(&sql);
 				for field in fields.values() {
 					let value = entity.field(field.name).unwrap();
@@ -64,15 +77,22 @@ impl DbContext {
 					};
 				}
 				let result = query.fetch_one(&mut self.connection).await?;
-				for field in entity.meta().primary_key.iter() {
-					let field_meta = &entity.meta().fields[field];
-					let value = entity.field_mut(field_meta.name).unwrap();
-					match field_meta.ty {
-						FieldType::I32 => *value.downcast_mut::<i32>().unwrap() = result.get(field),
-						FieldType::String => *value.downcast_mut::<String>().unwrap() = result.get(field),
+
+				for field in fields.values() {
+					let value = entity.field_mut(field.name).unwrap();
+					match field.ty {
+						FieldType::I32 => {
+							*value.downcast_mut::<EntityField<i32>>().unwrap() =
+								EntityField::Set(result.get(&field.name))
+						},
+						FieldType::String => {
+							*value.downcast_mut::<EntityField<String>>().unwrap() =
+								EntityField::Set(result.get(&field.name))
+						},
 					}
 				}
-				(entity.id().unwrap(), (*entity).type_id())
+
+				(entity.id(), (*entity).type_id())
 			};
 			self.entities.entry(type_id).or_insert_with(HashMap::new).insert(id, entity);
 		}
