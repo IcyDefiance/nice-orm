@@ -51,7 +51,7 @@ impl PostgresSqlGen {
 
 	fn update_column(&self, table: &str, field: &FieldMeta) -> String {
 		let field_type = Self::entity_type_to_column_type(field.ty);
-		format!("ALTER TABLE \"{}\" ALTER COLUMN \"{}\" TYPE {} {};", table, field.name, field_type)
+		format!("ALTER TABLE \"{}\" ALTER COLUMN \"{}\" TYPE {};", table, field.name, field_type)
 	}
 
 	fn add_identity_generation(&self, table: &str, field: &FieldMeta) -> String {
@@ -76,7 +76,7 @@ impl PostgresSqlGen {
 		} else {
 			column_constraints.push("NOT NULL".into());
 		}
-		if let Some(generated_as_identity) = &field.generated_as_identity {
+		if let Some(generated_as_identity) = field.generated_as_identity {
 			let identity_generation = Self::identity_generation(generated_as_identity);
 			column_constraints.push(format!("GENERATED {} AS IDENTITY", identity_generation));
 		}
@@ -128,9 +128,11 @@ impl SqlGen for PostgresSqlGen {
 							up.push(self.update_column(table, &column_meta));
 							// TODO: detect when we can reverse this update, such as when shrinking an integer type
 						}
-						if let Some(identity_generation) = column_meta.generated_as_identity {
-							if old_column.generated_as_identity != Self::identity_generation(identity_generation) {
+						if old_column.identity_generation != column_meta.generated_as_identity {
+							if column_meta.generated_as_identity.is_some() {
 								up.push(self.add_identity_generation(table, &column_meta));
+							} else {
+								unimplemented!("removing identity generation is not supported yet");
 							}
 						}
 					} else {
@@ -177,7 +179,7 @@ async fn get_old_table_info(pool: &Pool<Postgres>) -> Result<HashMap<String, Has
 				(x.column_name.clone(), PgField {
 					name: x.column_name,
 					ty: x.data_type,
-					identity_generation: x.identity_generation,
+					identity_generation: x.identity_generation.map(|x| IdentityGeneration::from_name(&x)),
 				}),
 			)
 		})
@@ -203,5 +205,5 @@ struct PgField {
 	#[allow(unused)]
 	name: String,
 	ty: String,
-	identity_generation: Option<String>,
+	identity_generation: Option<IdentityGeneration>,
 }

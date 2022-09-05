@@ -26,3 +26,12 @@ pub enum IdentityGeneration {
 	Always,
 	ByDefault,
 }
+impl IdentityGeneration {
+	pub fn from_name(name: &str) -> Self {
+		match name {
+			"ALWAYS" => Self::Always,
+			"BY DEFAULT" => Self::ByDefault,
+			_ => panic!("Unknown identity generation: {}", name),
+		}
+	}
+}
