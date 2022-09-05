@@ -8,6 +8,7 @@ pub struct EntityMeta {
 	pub primary_key: &'static [&'static str],
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct FieldMeta {
 	pub name: &'static str,
 	pub ty: FieldType,

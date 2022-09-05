@@ -121,23 +121,23 @@ impl SqlGen for PostgresSqlGen {
 				}
 
 				for &column in entity.fields.keys() {
-					let column_meta = &entity.fields[column];
+					let field_meta = &entity.fields[column];
 					if let Some(old_column) = old_fields.get(column) {
 						// update columns
-						if old_column.ty != Self::entity_type_to_column_type(column_meta.ty) {
-							up.push(self.update_column(table, &column_meta));
+						if old_column.ty != Self::entity_type_to_column_type(field_meta.ty) {
+							up.push(self.update_column(table, &field_meta));
 							// TODO: detect when we can reverse this update, such as when shrinking an integer type
 						}
-						if old_column.identity_generation != column_meta.generated_as_identity {
-							if column_meta.generated_as_identity.is_some() {
-								up.push(self.add_identity_generation(table, &column_meta));
+						if old_column.identity_generation != field_meta.generated_as_identity {
+							if field_meta.generated_as_identity.is_some() {
+								up.push(self.add_identity_generation(table, &field_meta));
 							} else {
-								unimplemented!("removing identity generation is not supported yet");
+								unimplemented!("removing identity generation is not supported yet {:?}", field_meta);
 							}
 						}
 					} else {
 						// create columns
-						let column = &column_meta;
+						let column = &field_meta;
 						up.push(self.create_column(table, column));
 						if let Some(down) = &mut down {
 							down.push(self.drop_column(table, column.name));
