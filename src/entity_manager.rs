@@ -1,7 +1,7 @@
 use crate::{entity_meta::FieldType, Entity, EntityField, Key};
 use anyhow::Result;
 use sqlx::{pool::PoolConnection, postgres::PgPoolOptions, query, PgPool, Postgres, Row};
-use std::{any::TypeId, collections::HashMap, sync::Arc};
+use std::{any::TypeId, collections::HashMap, marker::PhantomData, sync::Arc};
 use tokio::sync::RwLock;
 
 pub struct DbContextPool {
@@ -34,6 +34,10 @@ impl DbContext {
 		let entity = Arc::new(RwLock::new(entity));
 		self.pending_entities.push(entity.clone());
 		entity
+	}
+
+	pub fn select<T: Entity>(&self) -> SelectQueryBuilder<T> {
+		SelectQueryBuilder::new(self)
 	}
 
 	pub async fn save_changes(&mut self) -> Result<()> {
@@ -99,5 +103,20 @@ impl DbContext {
 			self.entities.entry(type_id).or_insert_with(HashMap::new).insert(id, entity);
 		}
 		Ok(())
+	}
+}
+
+struct SelectQueryBuilder<T> {
+	db_context: *const DbContext,
+	phantom: PhantomData<T>,
+}
+impl<T: Entity> SelectQueryBuilder<T> {
+	pub fn new(db_context: &DbContext) -> Self {
+		Self { db_context, phantom: PhantomData }
+	}
+
+	pub fn count(&self) -> Result<i32> {
+		let sql = format!("SELECT COUNT(*) FROM \"{}\";", T::META.table_name);
+		Ok(query(&sql).fetch_one(&selfdb_context).await?.get(0))
 	}
 }
