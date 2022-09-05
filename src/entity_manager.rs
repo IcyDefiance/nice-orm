@@ -45,6 +45,7 @@ impl DbContext {
 				let fields = &entity.meta().fields;
 
 				let mut field_names = Vec::with_capacity(fields.len());
+				let mut modified_fields = Vec::with_capacity(fields.len());
 				let mut modified_field_names = Vec::with_capacity(fields.len());
 				let mut modified_field_params = Vec::with_capacity(fields.len());
 				for field in fields.values() {
@@ -55,6 +56,7 @@ impl DbContext {
 					};
 					field_names.push(format!("\"{}\"", field.name));
 					if is_modified {
+						modified_fields.push(field);
 						modified_field_names.push(format!("\"{}\"", field.name));
 						modified_field_params.push(format!("${}", modified_field_params.len() + 1));
 					}
@@ -69,7 +71,7 @@ impl DbContext {
 				);
 
 				let mut query = query(&sql);
-				for field in fields.values() {
+				for field in modified_fields {
 					let value = entity.field(field.name).unwrap();
 					query = match field.ty {
 						FieldType::I32 => query.bind(value.downcast_ref::<EntityField<i32>>().unwrap().get()),
