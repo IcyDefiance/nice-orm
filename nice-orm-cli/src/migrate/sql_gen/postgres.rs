@@ -109,7 +109,9 @@ impl SqlGen for PostgresSqlGen {
 					if let Some(old_column) = old_fields.get(column) {
 						// update columns
 						if old_column.ty != Self::entity_type_to_column_type(column_meta.ty) {
+							println!("{} != {}", old_column.ty, Self::entity_type_to_column_type(column_meta.ty));
 							up.push(self.update_column(table, &column_meta));
+							// TODO: detect when we can reverse this update, such as when shrinking an integer type
 						}
 					} else {
 						// create columns
