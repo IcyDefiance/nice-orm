@@ -21,9 +21,9 @@ impl PostgresSqlGen {
 			.fields
 			.values()
 			.map(|field| {
-				let field_type = self.entity_type_to_column_type(field.ty);
-				let not_null = if field.optional { "NULL" } else { "NOT NULL" };
-				format!("\n\t\"{}\" {} {}", field.name, field_type, not_null)
+				let field_type = Self::entity_type_to_column_type(field.ty);
+				let column_constraints = Self::make_column_constriants(field);
+				format!("\n\t\"{}\" {} {}", field.name, field_type, column_constraints)
 			})
 			.collect::<Vec<_>>();
 
@@ -40,9 +40,9 @@ impl PostgresSqlGen {
 	}
 
 	fn create_column(&self, table: &str, column: &FieldMeta) -> String {
-		let field_type = self.entity_type_to_column_type(column.ty);
-		let not_null = if column.optional { "NULL" } else { "NOT NULL" };
-		format!("ALTER TABLE \"{}\" ADD COLUMN \"{}\" {} {};", table, column.name, field_type, not_null)
+		let field_type = Self::entity_type_to_column_type(column.ty);
+		let column_constraints = Self::make_column_constriants(field);
+		format!("ALTER TABLE \"{}\" ADD COLUMN \"{}\" {} {};", table, column.name, field_type, column_constraints)
 	}
 
 	fn drop_column(&self, table: &str, column: &str) -> String {
@@ -50,21 +50,31 @@ impl PostgresSqlGen {
 	}
 
 	fn update_column(&self, table: &str, column: &FieldMeta) -> String {
-		let not_null = if column.optional { "NULL" } else { "NOT NULL" };
+		let field_type = Self::entity_type_to_column_type(column.ty);
+		let column_constraints = Self::make_column_constriants(field);
 		format!(
 			"ALTER TABLE \"{}\" ALTER COLUMN \"{}\" TYPE {} {};",
-			table,
-			column.name,
-			self.entity_type_to_column_type(column.ty),
-			not_null
+			table, column.name, field_type, column_constraints
 		)
 	}
 
-	fn entity_type_to_column_type(&self, ty: FieldType) -> &'static str {
+	fn entity_type_to_column_type(ty: FieldType) -> &'static str {
 		match ty {
 			FieldType::I32 => "integer",
 			FieldType::String => "varchar",
 		}
+	}
+
+	fn make_column_constriants(field: &FieldMeta) -> String {
+		let mut column_constraints = vec![];
+		if let Some(generated_as_identity) = field.generated_as_identity {
+			let generated_as_identity = match generated_as_identity {
+				GeneratedWhen::Always => "ALWAYS",
+				GeneratedWhen::ByDefault => "BY DEFAULT",
+			};
+			column_constraints.push(format!("GENERATED {} AS IDENTITY", generated_as_identity));
+		}
+		column_constraints.join(" ")
 	}
 }
 #[async_trait]
@@ -101,7 +111,7 @@ impl SqlGen for PostgresSqlGen {
 					let column_meta = &entity.fields[column];
 					if let Some(old_column) = old_fields.get(column) {
 						// update columns
-						if old_column.ty != self.entity_type_to_column_type(column_meta.ty) {
+						if old_column.ty != Self::entity_type_to_column_type(column_meta.ty) {
 							up.push(self.update_column(table, &column_meta));
 						}
 					} else {

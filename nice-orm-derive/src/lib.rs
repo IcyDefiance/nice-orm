@@ -60,7 +60,18 @@ pub fn entity(input: TokenStream) -> TokenStream {
 				} else {
 					unreachable!()
 				};
-				quote! { #field_name => #nice_orm::entity_meta::FieldMeta { name: #field_name, ty: #ty, optional: false } }
+				let generated_as_identity = if let Some(generated_as_identity) = &field.generated_as_identity {
+					if generated_as_identity == "always" {
+						quote! { Some(#nice_orm::entity_meta::GeneratedWhen::Always) }
+					} else if generated_as_identity == "by_default" {
+						quote! { Some(#nice_orm::entity_meta::GeneratedWhen::ByDefault) }
+					} else {
+						unreachable!()
+					}
+				} else {
+					quote! { None }
+				};
+				quote! { #field_name => #nice_orm::entity_meta::FieldMeta { name: #field_name, ty: #ty, optional: false, generated_as_identity: #generated_as_identity } }
 			})
 			.collect::<Vec<_>>();
 		let primary_key_idents =
@@ -167,6 +178,8 @@ struct EntityField {
 	ty: Type,
 	#[darling(default)]
 	primary_key: bool,
+	#[darling(default)]
+	generated_as_identity: Option<String>,
 }
 impl EntityField {
 	// used by darling above

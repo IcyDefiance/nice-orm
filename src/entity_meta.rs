@@ -12,10 +12,16 @@ pub struct FieldMeta {
 	pub name: &'static str,
 	pub ty: FieldType,
 	pub optional: bool,
+	pub generated_as_identity: Option<GeneratedWhen>,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum FieldType {
 	I32,
 	String,
+}
+
+pub enum GeneratedWhen {
+	Always,
+	ByDefault,
 }
