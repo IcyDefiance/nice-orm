@@ -13,7 +13,7 @@ pub struct FieldMeta {
 	pub name: &'static str,
 	pub ty: FieldType,
 	pub optional: bool,
-	pub generated_as_identity: Option<IdentityGeneration>,
+	pub identity_generation: Option<IdentityGeneration>,
 }
 
 #[derive(Debug, Clone, Copy)]
