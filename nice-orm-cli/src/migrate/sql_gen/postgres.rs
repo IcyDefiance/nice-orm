@@ -55,7 +55,7 @@ impl PostgresSqlGen {
 	}
 
 	fn add_identity_generation(&self, table: &str, field: &FieldMeta) -> String {
-		let identity_generation = Self::identity_generation(field.generated_as_identity.unwrap());
+		let identity_generation = Self::identity_generation(field.identity_generation.unwrap());
 		format!(
 			"ALTER TABLE \"{}\" ALTER COLUMN \"{}\" ADD GENERATED {} AS IDENTITY;",
 			table, field.name, identity_generation
@@ -76,8 +76,8 @@ impl PostgresSqlGen {
 		} else {
 			column_constraints.push("NOT NULL".into());
 		}
-		if let Some(generated_as_identity) = field.generated_as_identity {
-			let identity_generation = Self::identity_generation(generated_as_identity);
+		if let Some(identity_generation) = field.identity_generation {
+			let identity_generation = Self::identity_generation(identity_generation);
 			column_constraints.push(format!("GENERATED {} AS IDENTITY", identity_generation));
 		}
 		column_constraints.join(" ")
@@ -128,8 +128,8 @@ impl SqlGen for PostgresSqlGen {
 							up.push(self.update_column(table, &field_meta));
 							// TODO: detect when we can reverse this update, such as when shrinking an integer type
 						}
-						if old_column.identity_generation != field_meta.generated_as_identity {
-							if field_meta.generated_as_identity.is_some() {
+						if old_column.identity_generation != field_meta.identity_generation {
+							if field_meta.identity_generation.is_some() {
 								up.push(self.add_identity_generation(table, &field_meta));
 							} else {
 								unimplemented!("removing identity generation is not supported yet {:?}", field_meta);
