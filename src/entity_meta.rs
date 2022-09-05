@@ -21,6 +21,7 @@ pub enum FieldType {
 	String,
 }
 
+#[derive(PartialEq, Eq)]
 pub enum GeneratedWhen {
 	Always,
 	ByDefault,

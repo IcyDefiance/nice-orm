@@ -108,7 +108,9 @@ impl SqlGen for PostgresSqlGen {
 					let column_meta = &entity.fields[column];
 					if let Some(old_column) = old_fields.get(column) {
 						// update columns
-						if old_column.ty != Self::entity_type_to_column_type(column_meta.ty) {
+						if old_column.ty != Self::entity_type_to_column_type(column_meta.ty)
+							|| old_column.generated_as_identity != column_meta.generated_as_identity
+						{
 							up.push(self.update_column(table, &column_meta));
 							// TODO: detect when we can reverse this update, such as when shrinking an integer type
 						}
