@@ -43,8 +43,11 @@ impl EventListener for CacheRedis {
 		let mut connection = self.get_connection().await?;
 		let mut count: Option<i64> = connection.get(&key).await?;
 		if count.is_none() {
+			println!("Cache miss: {}", key);
 			count = Some(next().await?);
 			connection.set(&key, count).await?;
+		} else {
+			println!("Cache hit: {}", key);
 		}
 		self.return_connection(connection).await;
 		Ok(count.unwrap())
