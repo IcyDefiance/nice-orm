@@ -22,6 +22,10 @@ impl DbContextPool {
 	pub async fn get_db_context(&self) -> Result<DbContext> {
 		Ok(DbContext::new(self.pool.clone(), self.middlewares.clone()))
 	}
+
+	pub fn add_middleware(&mut self, middleware: impl EventListener + Send + Sync + 'static) {
+		self.middlewares.push(Arc::new(middleware));
+	}
 }
 
 /// Intended to be short-lived, such as for a single request.
