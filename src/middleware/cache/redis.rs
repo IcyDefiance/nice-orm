@@ -7,7 +7,8 @@ use anyhow::Result;
 use async_trait::async_trait;
 use futures::lock::Mutex;
 use redis::{aio::Connection, AsyncCommands, Client, Script};
-use std::{collections::VecDeque, env};
+use sqlx::{Postgres, Transaction};
+use std::{collections::VecDeque, env, sync::Arc};
 
 pub struct CacheRedis {
 	client: Client,
@@ -35,7 +36,7 @@ impl CacheRedis {
 #[async_trait]
 impl EventListener for CacheRedis {
 	async fn aggregate(
-		&self,
+		self: Arc<Self>,
 		operation: &'static str,
 		entity_meta: &'static EntityMeta,
 		next: AggregateNext<'async_trait>,
@@ -54,10 +55,15 @@ impl EventListener for CacheRedis {
 		Ok(count.unwrap())
 	}
 
-	async fn flush(&self, entity: &mut dyn Entity, next: FlushNext<'async_trait>) -> Result<()> {
+	async fn flush(
+		self: Arc<Self>,
+		transaction: &mut Transaction<'_, Postgres>,
+		entity: &mut dyn Entity,
+		next: FlushNext<'async_trait>,
+	) -> Result<()> {
 		let table_name = entity.meta().table_name;
 
-		next(entity).await?;
+		next(transaction, entity).await?;
 
 		let key = format!("{}:{}:{}", self.prefix, table_name, "count");
 		let script = Script::new(

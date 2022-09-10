@@ -11,7 +11,7 @@ use tokio::sync::RwLock;
 
 pub struct DbContextPool {
 	pool: Arc<PgPool>,
-	middlewares: Arc<RwLock<Vec<Box<dyn EventListener + Send + Sync>>>>,
+	middlewares: Arc<RwLock<Vec<Arc<dyn EventListener + Send + Sync>>>>,
 }
 impl DbContextPool {
 	pub async fn new(uri: &str) -> Result<Self> {
@@ -24,7 +24,7 @@ impl DbContextPool {
 	}
 
 	pub async fn add_middleware(&mut self, middleware: impl EventListener + Send + Sync + 'static) {
-		self.middlewares.write().await.push(Box::new(middleware));
+		self.middlewares.write().await.push(Arc::new(middleware));
 	}
 }
 
@@ -33,10 +33,10 @@ pub struct DbContext {
 	pool: Arc<PgPool>,
 	entities: HashMap<TypeId, HashMap<Box<dyn Key + Send + Sync>, Arc<RwLock<dyn Entity>>>>,
 	pending_entities: Vec<Arc<RwLock<dyn Entity>>>,
-	middlewares: Arc<RwLock<Vec<Box<dyn EventListener + Send + Sync>>>>,
+	middlewares: Arc<RwLock<Vec<Arc<dyn EventListener + Send + Sync>>>>,
 }
 impl DbContext {
-	pub fn new(pool: Arc<PgPool>, middlewares: Arc<RwLock<Vec<Box<dyn EventListener + Send + Sync>>>>) -> Self {
+	pub fn new(pool: Arc<PgPool>, middlewares: Arc<RwLock<Vec<Arc<dyn EventListener + Send + Sync>>>>) -> Self {
 		Self { pool, entities: HashMap::new(), pending_entities: Vec::new(), middlewares }
 	}
 
@@ -60,14 +60,14 @@ impl DbContext {
 
 				// build middleware chain
 				let middlewares = self.middlewares.read().await;
-				let transaction = &mut transaction;
-				let mut next: FlushNext =
-					Box::new(move |entity| async move { Self::insert_entity(transaction, entity).await }.boxed());
-				for middleware in middlewares.iter() {
-					next = Box::new(move |entity| middleware.flush(entity, next));
+				let mut next: FlushNext = Box::new(move |transaction, entity| {
+					async move { Self::insert_entity(transaction, entity).await }.boxed()
+				});
+				for middleware in middlewares.iter().cloned() {
+					next = Box::new(move |transaction, entity| middleware.flush(transaction, entity, next));
 				}
 
-				next(entity).await?;
+				next(&mut transaction, entity).await?;
 
 				(entity.id(), (*entity).type_id())
 			};
@@ -143,13 +143,13 @@ impl<'a, T: EntityExt> SelectQueryBuilder<'a, T> {
 
 	pub async fn count(self) -> Result<i64> {
 		let middlewares = self.db_context.middlewares.read().await;
-		let next = self.build_aggregate_middleware(middlewares.iter()).await;
+		let next = self.build_aggregate_middleware(middlewares.iter().cloned()).await;
 		next("COUNT", T::META).await
 	}
 
 	async fn build_aggregate_middleware<'b>(
 		&self,
-		middlewares: impl Iterator<Item = &'b Box<dyn EventListener + Send + Sync>>,
+		middlewares: impl Iterator<Item = Arc<dyn EventListener + Send + Sync>>,
 	) -> AggregateNext<'b> {
 		let pool = self.db_context.pool.clone();
 		let mut next: AggregateNext = Box::new(move |operation, entity_meta| {
