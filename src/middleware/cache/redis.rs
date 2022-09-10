@@ -61,10 +61,9 @@ impl EventListener for CacheRedis {
 		entity: &mut dyn Entity,
 		next: FlushNext<'async_trait>,
 	) -> Result<()> {
-		let table_name = entity.meta().table_name;
-
 		next(transaction, entity).await?;
 
+		let table_name = entity.meta().table_name;
 		let key = format!("{}:{}:{}", self.prefix, table_name, "count");
 		let script = Script::new(
 			r"if redis.call('exists', ARGV[1]) then
