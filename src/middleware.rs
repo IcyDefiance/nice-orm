@@ -8,13 +8,11 @@ use async_trait::async_trait;
 use futures::future::BoxFuture;
 use sqlx::{Postgres, Transaction};
 
-pub type AggregateNext<'a> =
-	Box<dyn FnOnce(&'static str, &'static EntityMeta) -> BoxFuture<'a, Result<i64>> + Send + Sync + 'a>;
-pub type FlushNext<'a> = Box<
+pub type AggregateNext = Box<dyn FnOnce(&'static str, &'static EntityMeta) -> BoxFuture<Result<i64>> + Send + Sync>;
+pub type FlushNext = Box<
 	dyn for<'b> FnOnce(&'b mut Transaction<'_, Postgres>, &'b mut dyn Entity) -> BoxFuture<'b, Result<()>>
 		+ Send
-		+ Sync
-		+ 'a,
+		+ Sync,
 >;
 
 #[async_trait]
@@ -23,13 +21,13 @@ pub trait EventListener {
 		self: Arc<Self>,
 		operation: &'static str,
 		entity_meta: &'static EntityMeta,
-		next: AggregateNext<'async_trait>,
+		next: AggregateNext,
 	) -> Result<i64>;
 
 	async fn flush(
 		self: Arc<Self>,
 		transaction: &mut Transaction<'_, Postgres>,
 		entity: &mut dyn Entity,
-		next: FlushNext<'async_trait>,
+		next: FlushNext,
 	) -> Result<()>;
 }

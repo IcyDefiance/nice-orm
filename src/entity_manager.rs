@@ -147,10 +147,10 @@ impl<'a, T: EntityExt> SelectQueryBuilder<'a, T> {
 		next("COUNT", T::META).await
 	}
 
-	async fn build_aggregate_middleware<'b>(
+	async fn build_aggregate_middleware(
 		&self,
 		middlewares: impl Iterator<Item = Arc<dyn EventListener + Send + Sync>>,
-	) -> AggregateNext<'b> {
+	) -> AggregateNext {
 		let pool = self.db_context.pool.clone();
 		let mut next: AggregateNext = Box::new(move |operation, entity_meta| {
 			async move {

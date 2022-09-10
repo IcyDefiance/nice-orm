@@ -39,7 +39,7 @@ impl EventListener for CacheRedis {
 		self: Arc<Self>,
 		operation: &'static str,
 		entity_meta: &'static EntityMeta,
-		next: AggregateNext<'async_trait>,
+		next: AggregateNext,
 	) -> Result<i64> {
 		let key = format!("{}:{}:{}", self.prefix, entity_meta.table_name, operation);
 		let mut connection = self.get_connection().await?;
@@ -59,7 +59,7 @@ impl EventListener for CacheRedis {
 		self: Arc<Self>,
 		transaction: &mut Transaction<'_, Postgres>,
 		entity: &mut dyn Entity,
-		next: FlushNext<'async_trait>,
+		next: FlushNext,
 	) -> Result<()> {
 		next(transaction, entity).await?;
 
