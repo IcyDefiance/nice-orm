@@ -5,7 +5,7 @@ use crate::{
 };
 use anyhow::Result;
 use futures::FutureExt;
-use sqlx::{pool::PoolConnection, postgres::PgPoolOptions, query, PgPool, Postgres, Row};
+use sqlx::{postgres::PgPoolOptions, query, PgPool, Postgres, Row, Transaction};
 use std::{any::TypeId, collections::HashMap, marker::PhantomData, mem, sync::Arc};
 use tokio::sync::RwLock;
 
@@ -52,6 +52,7 @@ impl DbContext {
 
 	pub async fn save_changes(&mut self) -> Result<()> {
 		let mut pending_entities = mem::take(&mut self.pending_entities);
+		let mut transaction = self.pool.begin().await?;
 		for entity in pending_entities.drain(..) {
 			let (id, type_id) = {
 				let mut entity = entity.write().await;
@@ -59,10 +60,9 @@ impl DbContext {
 
 				// build middleware chain
 				let middlewares = self.middlewares.read().await;
-				let pool = self.pool.clone();
-				let mut next: FlushNext = Box::new(move |entity| {
-					async move { Self::insert_entity(pool.acquire().await?, entity).await }.boxed()
-				});
+				let transaction = &mut transaction;
+				let mut next: FlushNext =
+					Box::new(move |entity| async move { Self::insert_entity(transaction, entity).await }.boxed());
 				for middleware in middlewares.iter() {
 					next = Box::new(move |entity| middleware.flush(entity, next));
 				}
@@ -73,10 +73,11 @@ impl DbContext {
 			};
 			self.entities.entry(type_id).or_insert_with(HashMap::new).insert(id, entity);
 		}
+		transaction.commit().await?;
 		Ok(())
 	}
 
-	async fn insert_entity(mut connection: PoolConnection<Postgres>, entity: &mut dyn Entity) -> Result<()> {
+	async fn insert_entity(connection: &mut Transaction<'_, Postgres>, entity: &mut dyn Entity) -> Result<()> {
 		let fields = &entity.meta().fields;
 
 		let mut field_names = Vec::with_capacity(fields.len());
@@ -113,7 +114,7 @@ impl DbContext {
 				FieldType::String => query.bind(value.downcast_ref::<EntityField<String>>().unwrap().get()),
 			};
 		}
-		let result = query.fetch_one(&mut connection).await?;
+		let result = query.fetch_one(connection).await?;
 
 		for field in fields.values() {
 			let value = entity.field_mut(field.name).unwrap();
