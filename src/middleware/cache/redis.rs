@@ -63,8 +63,7 @@ impl EventListener for CacheRedis {
 	) -> Result<()> {
 		next(transaction, entity).await?;
 
-		let table_name = entity.meta().table_name;
-		let key = format!("{}:{}:{}", self.prefix, table_name, "count");
+		let key = format!("{}:{}:{}", self.prefix, entity.meta().table_name, "count");
 		let script = Script::new(
 			r"if redis.call('exists', ARGV[1]) then
 				return redis.call('incr', ARGV[1])
