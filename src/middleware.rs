@@ -1,23 +1,23 @@
 pub mod cache;
 
-use crate::entity_meta::EntityMeta;
+use crate::{entity_meta::EntityMeta, Entity};
 use anyhow::Result;
 use async_trait::async_trait;
-use std::{future::Future, pin::Pin, sync::Arc};
+use futures::future::BoxFuture;
+use std::sync::Arc;
 
-pub type DbRet<T> = Pin<Box<dyn Future<Output = Result<T>> + Send>>;
-pub type DbNext<T> = Box<dyn FnOnce() -> DbRet<T> + Send + Sync>;
+pub type AggregateNext<'a> =
+	Box<dyn FnOnce(&'static str, &'static EntityMeta) -> BoxFuture<'a, Result<i64>> + Send + Sync + 'a>;
+pub type FlushNext<'a> = Box<dyn FnOnce(&'a mut dyn Entity) -> BoxFuture<'a, Result<()>> + Send + Sync + 'a>;
 
 #[async_trait]
 pub trait EventListener {
 	async fn aggregate(
 		self: Arc<Self>,
-		operation: String,
+		operation: &'static str,
 		entity_meta: &'static EntityMeta,
-		next: DbNext<i64>,
+		next: AggregateNext<'async_trait>,
 	) -> Result<i64>;
-}
 
-// pub struct DbMiddleware {
-// 	pub count: Box<dyn Fn(&EntityMeta, &DbNext<T>) -> DbRet<T>>,
-// }
+	async fn flush(self: Arc<Self>, entity: &mut dyn Entity, next: FlushNext<'async_trait>) -> Result<()>;
+}

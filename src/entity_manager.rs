@@ -1,6 +1,6 @@
 use crate::{
 	entity_meta::FieldType,
-	middleware::{DbNext, DbRet, EventListener},
+	middleware::{AggregateNext, EventListener, FlushNext},
 	Entity, EntityExt, EntityField, Key,
 };
 use anyhow::Result;
@@ -57,57 +57,16 @@ impl DbContext {
 				let mut entity = entity.write().await;
 				let entity = &mut *entity;
 
-				let fields = &entity.meta().fields;
-
-				let mut field_names = Vec::with_capacity(fields.len());
-				let mut modified_fields = Vec::with_capacity(fields.len());
-				let mut modified_field_names = Vec::with_capacity(fields.len());
-				let mut modified_field_params = Vec::with_capacity(fields.len());
-				for field in fields.values() {
-					let value = entity.field(field.name).unwrap();
-					let is_modified = match field.ty {
-						FieldType::I32 => value.downcast_ref::<EntityField<i32>>().unwrap().is_modified(),
-						FieldType::String => value.downcast_ref::<EntityField<String>>().unwrap().is_modified(),
-					};
-					field_names.push(format!("\"{}\"", field.name));
-					if is_modified {
-						modified_fields.push(field);
-						modified_field_names.push(format!("\"{}\"", field.name));
-						modified_field_params.push(format!("${}", modified_field_params.len() + 1));
-					}
+				// build middleware chain
+				let pool = self.pool.clone();
+				let mut next: FlushNext = Box::new(move |entity| {
+					async move { Self::insert_entity(pool.acquire().await?, entity).await }.boxed()
+				});
+				for middleware in &self.middlewares {
+					next = Box::new(move |entity| middleware.clone().flush(entity, next));
 				}
 
-				let sql = format!(
-					"INSERT INTO \"{}\" ({}) VALUES ({}) RETURNING {}",
-					entity.meta().table_name,
-					modified_field_names.join(", "),
-					modified_field_params.join(", "),
-					field_names.join(", "),
-				);
-
-				let mut query = query(&sql);
-				for field in modified_fields {
-					let value = entity.field(field.name).unwrap();
-					query = match field.ty {
-						FieldType::I32 => query.bind(value.downcast_ref::<EntityField<i32>>().unwrap().get()),
-						FieldType::String => query.bind(value.downcast_ref::<EntityField<String>>().unwrap().get()),
-					};
-				}
-				let result = query.fetch_one(&mut self.get_connection().await?).await?;
-
-				for field in fields.values() {
-					let value = entity.field_mut(field.name).unwrap();
-					match field.ty {
-						FieldType::I32 => {
-							*value.downcast_mut::<EntityField<i32>>().unwrap() =
-								EntityField::Set(result.get(&field.name))
-						},
-						FieldType::String => {
-							*value.downcast_mut::<EntityField<String>>().unwrap() =
-								EntityField::Set(result.get(&field.name))
-						},
-					}
-				}
+				next(entity).await?;
 
 				(entity.id(), (*entity).type_id())
 			};
@@ -116,8 +75,58 @@ impl DbContext {
 		Ok(())
 	}
 
-	pub(crate) async fn get_connection(&self) -> Result<PoolConnection<Postgres>> {
-		self.pool.acquire().await.map_err(Into::into)
+	async fn insert_entity(mut connection: PoolConnection<Postgres>, entity: &mut dyn Entity) -> Result<()> {
+		let fields = &entity.meta().fields;
+
+		let mut field_names = Vec::with_capacity(fields.len());
+		let mut modified_fields = Vec::with_capacity(fields.len());
+		let mut modified_field_names = Vec::with_capacity(fields.len());
+		let mut modified_field_params = Vec::with_capacity(fields.len());
+		for field in fields.values() {
+			let value = entity.field(field.name).unwrap();
+			let is_modified = match field.ty {
+				FieldType::I32 => value.downcast_ref::<EntityField<i32>>().unwrap().is_modified(),
+				FieldType::String => value.downcast_ref::<EntityField<String>>().unwrap().is_modified(),
+			};
+			field_names.push(format!("\"{}\"", field.name));
+			if is_modified {
+				modified_fields.push(field);
+				modified_field_names.push(format!("\"{}\"", field.name));
+				modified_field_params.push(format!("${}", modified_field_params.len() + 1));
+			}
+		}
+
+		let sql = format!(
+			"INSERT INTO \"{}\" ({}) VALUES ({}) RETURNING {}",
+			entity.meta().table_name,
+			modified_field_names.join(", "),
+			modified_field_params.join(", "),
+			field_names.join(", "),
+		);
+
+		let mut query = query(&sql);
+		for field in modified_fields {
+			let value = entity.field(field.name).unwrap();
+			query = match field.ty {
+				FieldType::I32 => query.bind(value.downcast_ref::<EntityField<i32>>().unwrap().get()),
+				FieldType::String => query.bind(value.downcast_ref::<EntityField<String>>().unwrap().get()),
+			};
+		}
+		let result = query.fetch_one(&mut connection).await?;
+
+		for field in fields.values() {
+			let value = entity.field_mut(field.name).unwrap();
+			match field.ty {
+				FieldType::I32 => {
+					*value.downcast_mut::<EntityField<i32>>().unwrap() = EntityField::Set(result.get(&field.name))
+				},
+				FieldType::String => {
+					*value.downcast_mut::<EntityField<String>>().unwrap() = EntityField::Set(result.get(&field.name))
+				},
+			}
+		}
+
+		Ok(())
 	}
 }
 
@@ -131,25 +140,22 @@ impl<'a, T: EntityExt> SelectQueryBuilder<'a, T> {
 	}
 
 	pub async fn count(self) -> Result<i64> {
-		let next = self.build_aggregate_middleware("COUNT", self.db_context.middlewares.clone().into_iter());
-		next().await
+		let next = self.build_aggregate_middleware();
+		next("COUNT", T::META).await
 	}
 
-	fn build_aggregate_middleware(
-		&self,
-		operation: &str,
-		middlewares: impl Iterator<Item = Arc<dyn EventListener + Send + Sync>>,
-	) -> DbNext<i64> {
+	fn build_aggregate_middleware(&self) -> AggregateNext {
 		let pool = self.db_context.pool.clone();
-		let sql = format!("SELECT {}(*) FROM \"{}\";", operation, T::META.table_name);
-		let mut next: Box<dyn FnOnce() -> DbRet<i64> + Send + Sync> = Box::new(move || -> DbRet<i64> {
-			let sql = sql.clone();
-			let connection = pool.acquire();
-			async move { Ok(query(&sql).fetch_one(&mut connection.await?).await?.get(0)) }.boxed()
+		let mut next: AggregateNext = Box::new(move |operation, entity_meta| {
+			async move {
+				let sql = format!("SELECT {}(*) FROM \"{}\";", operation, entity_meta.table_name);
+				let mut con = pool.acquire().await?;
+				Ok(query(&sql).fetch_one(&mut con).await?.get(0))
+			}
+			.boxed()
 		});
-		for middleware in middlewares {
-			let operation = operation.to_string();
-			next = Box::new(move || middleware.aggregate(operation.clone(), T::META, next));
+		for middleware in &self.db_context.middlewares {
+			next = Box::new(move |operation, entity_meta| middleware.clone().aggregate(operation, entity_meta, next));
 		}
 		next
 	}

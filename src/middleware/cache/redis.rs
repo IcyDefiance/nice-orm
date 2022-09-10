@@ -1,11 +1,12 @@
 use crate::{
 	entity_meta::EntityMeta,
-	middleware::{DbNext, EventListener},
+	middleware::{AggregateNext, EventListener, FlushNext},
+	Entity,
 };
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::lock::Mutex;
-use redis::{aio::Connection, AsyncCommands, Client};
+use redis::{aio::Connection, AsyncCommands, Client, Script};
 use std::{collections::VecDeque, env, sync::Arc};
 
 pub struct CacheRedis {
@@ -35,21 +36,40 @@ impl CacheRedis {
 impl EventListener for CacheRedis {
 	async fn aggregate(
 		self: Arc<Self>,
-		operation: String,
+		operation: &'static str,
 		entity_meta: &'static EntityMeta,
-		next: DbNext<i64>,
+		next: AggregateNext<'async_trait>,
 	) -> Result<i64> {
 		let key = format!("{}:{}:{}", self.prefix, entity_meta.table_name, operation);
 		let mut connection = self.get_connection().await?;
 		let mut count: Option<i64> = connection.get(&key).await?;
 		if count.is_none() {
 			println!("Cache miss: {}", key);
-			count = Some(next().await?);
+			count = Some(next(operation, entity_meta).await?);
 			connection.set(&key, count).await?;
 		} else {
 			println!("Cache hit: {}", key);
 		}
 		self.return_connection(connection).await;
 		Ok(count.unwrap())
+	}
+
+	async fn flush(self: Arc<Self>, entity: &mut dyn Entity, next: FlushNext<'async_trait>) -> Result<()> {
+		let table_name = entity.meta().table_name;
+
+		next(entity).await?;
+
+		let key = format!("{}:{}:{}", self.prefix, table_name, "count");
+		let script = Script::new(
+			r"if redis.call('exists', ARGV[1]) then
+				return redis.call('incr', ARGV[1])
+			end",
+		);
+		let mut connection = self.get_connection().await?;
+		println!("Incrementing cache: {}", key);
+		script.arg(key).invoke_async(&mut connection).await?;
+		self.return_connection(connection).await;
+
+		Ok(())
 	}
 }
