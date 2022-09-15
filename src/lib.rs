@@ -1,6 +1,7 @@
 pub mod entity_manager;
 pub mod entity_meta;
 pub mod middleware;
+pub mod query;
 
 pub use bevy_reflect;
 pub use lazy_static;

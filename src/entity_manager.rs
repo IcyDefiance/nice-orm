@@ -1,12 +1,13 @@
 use crate::{
 	entity_meta::FieldType,
 	middleware::{AggregateNext, EventListener, FlushNext},
+	query::{Predicate, SqlBuilder},
 	Entity, EntityExt, EntityField, Key,
 };
 use anyhow::Result;
 use futures::FutureExt;
 use sqlx::{postgres::PgPoolOptions, query, PgPool, Postgres, Row, Transaction};
-use std::{any::TypeId, collections::HashMap, marker::PhantomData, mem, sync::Arc};
+use std::{any::TypeId, collections::HashMap, fmt::Write, marker::PhantomData, mem, sync::Arc};
 use tokio::sync::RwLock;
 
 pub struct DbContextPool {
@@ -46,8 +47,8 @@ impl DbContext {
 		entity
 	}
 
-	pub fn select<T: EntityExt>(&self) -> SelectQueryBuilder<T> {
-		SelectQueryBuilder::new(self)
+	pub fn select<T: EntityExt>(&self) -> SelectBuilder<T> {
+		SelectBuilder::new(self)
 	}
 
 	pub async fn save_changes(&mut self) -> Result<()> {
@@ -132,19 +133,25 @@ impl DbContext {
 	}
 }
 
-pub struct SelectQueryBuilder<'a, T> {
+pub struct SelectBuilder<'a, T> {
 	db_context: &'a DbContext,
+	filter: Option<Box<dyn Predicate + Send + Sync + 'a>>,
 	phantom: PhantomData<T>,
 }
-impl<'a, T: EntityExt> SelectQueryBuilder<'a, T> {
+impl<'a, T: EntityExt> SelectBuilder<'a, T> {
 	pub fn new(db_context: &'a DbContext) -> Self {
-		Self { db_context, phantom: PhantomData }
+		Self { db_context, filter: None, phantom: PhantomData }
+	}
+
+	pub fn filter(mut self, predicate: impl Predicate + Send + Sync + 'a) -> Self {
+		self.filter = Some(Box::new(predicate));
+		self
 	}
 
 	pub async fn count(self) -> Result<i64> {
 		let middlewares = self.db_context.middlewares.read().await;
 		let next = self.build_aggregate_middleware(middlewares.iter().cloned()).await;
-		next("COUNT", T::META).await
+		next("COUNT", T::META, self.filter.as_ref()).await
 	}
 
 	async fn build_aggregate_middleware(
@@ -152,16 +159,26 @@ impl<'a, T: EntityExt> SelectQueryBuilder<'a, T> {
 		middlewares: impl Iterator<Item = Arc<dyn EventListener + Send + Sync>>,
 	) -> AggregateNext {
 		let pool = self.db_context.pool.clone();
-		let mut next: AggregateNext = Box::new(move |operation, entity_meta| {
+		let mut next: AggregateNext = Box::new(move |operation, entity_meta, filter| {
 			async move {
-				let sql = format!("SELECT {}(*) FROM \"{}\";", operation, entity_meta.table_name);
-				let mut con = pool.acquire().await?;
-				Ok(query(&sql).fetch_one(&mut con).await?.get(0))
+				let mut sql = SqlBuilder::new();
+				write!(sql, "SELECT {}(*) FROM \"{}\"", operation, entity_meta.table_name).unwrap();
+				if let Some(filter) = filter {
+					write!(sql, " WHERE ").unwrap();
+					filter.push_to(&mut sql);
+				}
+				let mut query = sql.to_query();
+				if let Some(filter) = filter {
+					query = filter.bind_to(query);
+				}
+				Ok(query.fetch_one(&*pool).await?.get(0))
 			}
 			.boxed()
 		});
 		for middleware in middlewares {
-			next = Box::new(move |operation, entity_meta| middleware.aggregate(operation, entity_meta, next));
+			next = Box::new(move |operation, entity_meta, filter| {
+				middleware.aggregate(operation, entity_meta, filter, next)
+			});
 		}
 		next
 	}

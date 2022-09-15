@@ -1,36 +1,30 @@
 use crate::{
 	entity_meta::EntityMeta,
 	middleware::{AggregateNext, EventListener, FlushNext},
+	query::{Predicate, SqlBuilder},
 	Entity,
 };
 use anyhow::Result;
 use async_trait::async_trait;
-use futures::lock::Mutex;
-use redis::{aio::Connection, AsyncCommands, Client, Script};
+use deadpool_redis::{Config, Connection, Pool, Runtime};
+use flate2::{write::ZlibEncoder, Compression};
+use redis::{AsyncCommands, AsyncIter, Script};
 use sqlx::{Postgres, Transaction};
-use std::{collections::VecDeque, env, sync::Arc};
+use std::{fmt::Write as FmtWrite, io::Write, sync::Arc};
 
 pub struct CacheRedis {
-	client: Client,
-	connections: Mutex<VecDeque<Connection>>,
+	pool: Pool,
 	prefix: String,
 }
 impl CacheRedis {
 	pub async fn new(prefix: String) -> Result<Self> {
-		let client = redis::Client::open(env::var("REDIS_URL")?)?;
-		Ok(Self { client, connections: Mutex::default(), prefix })
+		let cfg = Config::from_url("redis://127.0.0.1/");
+		let pool = cfg.create_pool(Some(Runtime::Tokio1)).unwrap();
+		Ok(Self { pool, prefix })
 	}
 
 	async fn get_connection(&self) -> Result<Connection> {
-		if let Some(connection) = self.connections.lock().await.pop_front() {
-			Ok(connection)
-		} else {
-			Ok(self.client.get_tokio_connection().await?)
-		}
-	}
-
-	async fn return_connection(&self, connection: Connection) {
-		self.connections.lock().await.push_back(connection);
+		Ok(self.pool.get().await?)
 	}
 }
 #[async_trait]
@@ -39,19 +33,27 @@ impl EventListener for CacheRedis {
 		self: Arc<Self>,
 		operation: &'static str,
 		entity_meta: &'static EntityMeta,
+		filter: Option<&'async_trait Box<dyn Predicate + Send + Sync + 'async_trait>>,
 		next: AggregateNext,
 	) -> Result<i64> {
-		let key = format!("{}:{}:{}", self.prefix, entity_meta.table_name, operation);
-		let mut connection = self.get_connection().await?;
-		let mut count: Option<i64> = connection.get(&key).await?;
-		if count.is_none() {
-			println!("Cache miss: {}", key);
-			count = Some(next(operation, entity_meta).await?);
-			connection.set(&key, count).await?;
-		} else {
-			println!("Cache hit: {}", key);
+		let mut key = format!("{}:{}:{}", self.prefix, entity_meta.table_name, operation);
+		if let Some(filter) = filter {
+			// TODO: optimize by writing directly to compressor
+			let mut sql = SqlBuilder::new();
+			filter.push_to(&mut sql);
+			let sql = sql.to_string();
+			let mut enc = ZlibEncoder::new(Vec::new(), Compression::fast());
+			write!(enc, "{}", sql).unwrap();
+			write!(key, ":{}", base64::encode(enc.finish().unwrap())).unwrap();
 		}
-		self.return_connection(connection).await;
+
+		let mut redis = self.get_connection().await?;
+		let mut count: Option<i64> = redis.get(&key).await?;
+		if count.is_none() {
+			count = Some(next(operation, entity_meta, filter).await?);
+			redis.set(&key, count).await?;
+		}
+
 		Ok(count.unwrap())
 	}
 
@@ -64,15 +66,20 @@ impl EventListener for CacheRedis {
 		next(transaction, entity).await?;
 
 		let key = format!("{}:{}:{}", self.prefix, entity.meta().table_name, "count");
+		// TODO: save and reuse script
 		let script = Script::new(
-			r"if redis.call('exists', ARGV[1]) then
+			"if redis.call('exists', ARGV[1]) then
 				return redis.call('incr', ARGV[1])
 			end",
 		);
-		let mut connection = self.get_connection().await?;
-		println!("Incrementing cache: {}", key);
-		script.arg(key).invoke_async(&mut connection).await?;
-		self.return_connection(connection).await;
+		let mut redis = self.get_connection().await?;
+		script.arg(&key).invoke_async(&mut redis).await?;
+
+		let mut iter: AsyncIter<Vec<String>> = redis.scan_match(&format!("{}:*", key)).await?;
+		while let Some(keys) = iter.next_item().await {
+			let mut redis = self.get_connection().await?;
+			let _: i8 = redis.unlink(&keys).await?;
+		}
 
 		Ok(())
 	}

@@ -8,7 +8,11 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.57"
 async-trait = "0.1.56"
+base64 = "0.13.0"
 bevy_reflect = "0.8.0"
+deadpool-redis = "0.10.2"
+false = "0.0.0"
+flate2 = { version = "1.0.24", features = ["zlib"] }
 futures = "0.3.24"
 lazy_static = "1.4.0"
 nice-orm-derive = { path = "nice-orm-derive" }

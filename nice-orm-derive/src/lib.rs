@@ -86,6 +86,19 @@ pub fn entity(input: TokenStream) -> TokenStream {
 		let ident = entity.ident;
 		let table_name = ident.to_string().to_case(Case::Snake);
 
+		let mod_ident = syn::Ident::new(&table_name, Span::call_site());
+		let field_exprs = entity
+			.fields
+			.iter()
+			.map(|field| {
+				let field_ident = field.ident.as_ref().unwrap();
+				quote! {
+					#[allow(non_upper_case_globals)]
+					pub const #field_ident: #nice_orm::query::Field<super::#ident> = #nice_orm::query::Field::new(stringify!(#field_ident));
+				}
+			})
+			.collect::<Vec<_>>();
+
 		let meta = quote! {
 			&#nice_orm::entity_meta::EntityMeta {
 				table_name: #table_name,
@@ -96,6 +109,10 @@ pub fn entity(input: TokenStream) -> TokenStream {
 		let meta_clone = meta.clone();
 
 		outputs.push(quote! {
+			mod #mod_ident {
+				#(#field_exprs)*
+			}
+
 			#[derive(#nice_orm::bevy_reflect::Reflect)]
 			pub struct #ident {
 				#(#fields),*
