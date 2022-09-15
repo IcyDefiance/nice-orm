@@ -42,6 +42,7 @@ impl EventListener for CacheRedis {
 			let mut sql = SqlBuilder::new();
 			filter.push_to(&mut sql);
 			let sql = sql.to_string();
+			// TODO: maybe optimize by using a faster compression algorithm?
 			let mut enc = ZlibEncoder::new(Vec::new(), Compression::fast());
 			write!(enc, "{}", sql).unwrap();
 			write!(key, ":{}", base64::encode(enc.finish().unwrap())).unwrap();
